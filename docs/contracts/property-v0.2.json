@@ -1,0 +1,404 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.atlas.local/v0.2/property.json",
+  "title": "ATLAS Property",
+  "description": "Descritor e estado de uma property. MUDANÇA v0.1→v0.2: property deixou de ter id global próprio. É endereçada por (deviceId, key). 'key' é o endereço, único dentro do device; 'semanticType' é a classificação, vinda do vocabulário; 'name' é humano e renomeável.",
+  "$defs": {
+    "PropertyKey": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$",
+      "description": "Único dentro do device. Um termostato tem 'ambient_temperature' e 'target_temperature', ambos com semanticType 'temperature'."
+    },
+    "Availability": {
+      "enum": [
+        "AVAILABLE",
+        "UNAVAILABLE",
+        "UNKNOWN"
+      ],
+      "description": "Consigo falar com o dispositivo? UNKNOWN é o estado logo após um restart do Core."
+    },
+    "Freshness": {
+      "enum": [
+        "FRESH",
+        "STALE",
+        "NEVER_OBSERVED"
+      ],
+      "description": "Quão antiga é esta leitura, segundo a freshnessPolicy? Derivado — nunca persistido, sempre recalculado."
+    },
+    "Confidence": {
+      "enum": [
+        "CONFIRMED",
+        "ASSUMED",
+        "UNKNOWN"
+      ],
+      "description": "CONFIRMED = o dispositivo reportou. ASSUMED = presumido após comando aceito mas não confirmado (estado otimista). Os três eixos são ORTOGONAIS: dá para ter CONFIRMED+STALE (leitura boa mas velha) e ASSUMED+FRESH (acabei de mandar ligar e estou supondo)."
+    },
+    "ValueDomain": {
+      "type": "object",
+      "description": "Domínio do valor. Obrigatório para INTEGER, DECIMAL e ENUM.",
+      "properties": {
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "step": {
+          "type": "number"
+        },
+        "allowedValues": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "monotonic": {
+          "type": "boolean",
+          "default": false,
+          "description": "true para contadores acumulados (energy). Uma queda de valor indica reset do contador, não leitura menor — o Core deve tratar como evento, não como variação."
+        }
+      },
+      "additionalProperties": false
+    },
+    "FreshnessPolicy": {
+      "type": "object",
+      "description": "Frescor é POR PROPERTY, nunca global. Sem isto, o sensor de porta corretamente silencioso há 3 dias seria marcado como não confiável e pararia as automações.",
+      "required": [
+        "mode"
+      ],
+      "oneOf": [
+        {
+          "properties": {
+            "mode": {
+              "const": "PERIODIC"
+            },
+            "expectedIntervalSeconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "staleAfterSeconds": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "mode",
+            "expectedIntervalSeconds",
+            "staleAfterSeconds"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "properties": {
+            "mode": {
+              "const": "ON_CHANGE"
+            },
+            "heartbeatSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Opcional. Se o dispositivo emite keep-alive, ausência dele por este tempo marca STALE. Sem heartbeat, uma property ON_CHANGE NUNCA fica stale por tempo — só availability pode invalidá-la."
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "properties": {
+            "mode": {
+              "const": "ON_DEMAND"
+            },
+            "staleAfterSeconds": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "mode",
+            "staleAfterSeconds"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "PropertyDescriptor": {
+      "type": "object",
+      "required": [
+        "deviceId",
+        "key",
+        "name",
+        "semanticType",
+        "valueType",
+        "unit",
+        "readOnly",
+        "freshnessPolicy"
+      ],
+      "properties": {
+        "deviceId": {
+          "type": "string",
+          "pattern": "^dev_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "key": {
+          "$ref": "#/$defs/PropertyKey"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "semanticType": {
+          "type": "string",
+          "description": "Chave em vocabulary.semanticTypes."
+        },
+        "valueType": {
+          "enum": [
+            "BOOLEAN",
+            "INTEGER",
+            "DECIMAL",
+            "STRING",
+            "ENUM",
+            "DURATION",
+            "TIMESTAMP"
+          ]
+        },
+        "unit": {
+          "type": "string",
+          "description": "Chave em vocabulary.units. SEMPRE presente, nunca null. Grandeza sem dimensão usa 'NONE'."
+        },
+        "valueDomain": {
+          "$ref": "#/$defs/ValueDomain"
+        },
+        "readOnly": {
+          "type": "boolean",
+          "description": "true para sensores. Uma property gravável é alterada pela action nomeada em writeAction — nunca por escrita direta na property."
+        },
+        "writeAction": {
+          "type": "string",
+          "description": "Presente quando readOnly=false. Chave da action do mesmo device que altera esta property. Ex.: brightness → set_brightness."
+        },
+        "freshnessPolicy": {
+          "$ref": "#/$defs/FreshnessPolicy"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "readOnly": {
+                "const": false
+              }
+            },
+            "required": [
+              "readOnly"
+            ]
+          },
+          "then": {
+            "required": [
+              "writeAction"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "valueType": {
+                "const": "ENUM"
+              }
+            },
+            "required": [
+              "valueType"
+            ]
+          },
+          "then": {
+            "required": [
+              "valueDomain"
+            ]
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "PropertyState": {
+      "type": "object",
+      "description": "Estado corrente. NÃO carrega 'unit' — a unidade vem do descriptor, que é a autoridade. Evita as quatro cópias divergentes da v0.1.",
+      "required": [
+        "deviceId",
+        "key",
+        "availability",
+        "freshness",
+        "confidence"
+      ],
+      "properties": {
+        "deviceId": {
+          "type": "string"
+        },
+        "key": {
+          "$ref": "#/$defs/PropertyKey"
+        },
+        "value": {
+          "description": "null é legítimo e significa 'nunca observado' ou 'indisponível' — leia availability/freshness para saber qual.",
+          "type": [
+            "number",
+            "string",
+            "boolean",
+            "null"
+          ]
+        },
+        "observedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "Quando o mundo físico produziu o valor (relógio do dispositivo, se houver)."
+        },
+        "receivedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "Quando o ATLAS soube. Sempre relógio do Core. Em caso de divergência grande com observedAt, confie neste."
+        },
+        "availability": {
+          "$ref": "#/$defs/Availability"
+        },
+        "freshness": {
+          "$ref": "#/$defs/Freshness"
+        },
+        "confidence": {
+          "$ref": "#/$defs/Confidence"
+        },
+        "assumedFromCommandId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Presente quando confidence=ASSUMED. Aponta o comando que gerou a suposição, para que ela possa ser revogada se o comando falhar."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "descriptor",
+    "state"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 2
+    },
+    "descriptor": {
+      "$ref": "#/$defs/PropertyDescriptor"
+    },
+    "state": {
+      "$ref": "#/$defs/PropertyState"
+    }
+  },
+  "examples": [
+    {
+      "schemaVersion": 2,
+      "descriptor": {
+        "deviceId": "dev_08ZWDKZCNDXY0JS88XQWPKHS6E",
+        "key": "ambient_temperature",
+        "name": "Temperatura ambiente",
+        "semanticType": "temperature",
+        "valueType": "DECIMAL",
+        "unit": "CELSIUS",
+        "valueDomain": {
+          "min": -40,
+          "max": 85,
+          "step": 0.1
+        },
+        "readOnly": true,
+        "freshnessPolicy": {
+          "mode": "PERIODIC",
+          "expectedIntervalSeconds": 300,
+          "staleAfterSeconds": 900
+        }
+      },
+      "state": {
+        "deviceId": "dev_08ZWDKZCNDXY0JS88XQWPKHS6E",
+        "key": "ambient_temperature",
+        "value": 24.3,
+        "observedAt": "2026-08-22T23:12:15-03:00",
+        "receivedAt": "2026-08-22T23:12:16-03:00",
+        "availability": "AVAILABLE",
+        "freshness": "FRESH",
+        "confidence": "CONFIRMED"
+      }
+    },
+    {
+      "schemaVersion": 2,
+      "descriptor": {
+        "deviceId": "dev_0DZ8MTWTK182X4NP81E82623WC",
+        "key": "contact",
+        "name": "Porta da cozinha",
+        "semanticType": "contact",
+        "valueType": "ENUM",
+        "unit": "NONE",
+        "valueDomain": {
+          "allowedValues": [
+            "OPEN",
+            "CLOSED"
+          ]
+        },
+        "readOnly": true,
+        "freshnessPolicy": {
+          "mode": "ON_CHANGE"
+        }
+      },
+      "state": {
+        "deviceId": "dev_0DZ8MTWTK182X4NP81E82623WC",
+        "key": "contact",
+        "value": "CLOSED",
+        "observedAt": "2026-08-19T08:41:02-03:00",
+        "receivedAt": "2026-08-19T08:41:02-03:00",
+        "availability": "AVAILABLE",
+        "freshness": "FRESH",
+        "confidence": "CONFIRMED"
+      }
+    },
+    {
+      "schemaVersion": 2,
+      "descriptor": {
+        "deviceId": "dev_0FP7YD0EAFCCA3GTDKJHHWM99T",
+        "key": "brightness",
+        "name": "Intensidade",
+        "semanticType": "brightness",
+        "valueType": "INTEGER",
+        "unit": "PERCENT",
+        "valueDomain": {
+          "min": 0,
+          "max": 100,
+          "step": 1
+        },
+        "readOnly": false,
+        "writeAction": "set_brightness",
+        "freshnessPolicy": {
+          "mode": "ON_CHANGE"
+        }
+      },
+      "state": {
+        "deviceId": "dev_0FP7YD0EAFCCA3GTDKJHHWM99T",
+        "key": "brightness",
+        "value": 80,
+        "observedAt": null,
+        "receivedAt": "2026-08-22T23:25:00-03:00",
+        "availability": "AVAILABLE",
+        "freshness": "FRESH",
+        "confidence": "ASSUMED",
+        "assumedFromCommandId": "cmd_040NFFC80BED3DYSJVERE2VYBM"
+      }
+    }
+  ],
+  "exampleNotes": [
+    null,
+    "Sensor de porta: ON_CHANGE, silencioso há dias, e ainda assim perfeitamente válido.",
+    "Estado otimista: mandei ligar, o adapter aceitou, o dispositivo ainda não confirmou."
+  ]
+}

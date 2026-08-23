@@ -1,0 +1,624 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.atlas.local/v0.2/command.json",
+  "title": "ATLAS Command",
+  "description": "MUDANÇAS v0.1→v0.2: (1) ciclo de vida ganhou EXECUTING/COMPLETED para actions duráveis — a v0.1 parava em CONFIRMED, que significa apenas 'a bomba ligou'; (2) CANCELLED existe, porque uma irrigação que não pode ser interrompida viola a §18; (3) UNKNOWN_OUTCOME existe, para o comando que estava em voo quando o Core reiniciou; (4) idempotencyKey ganhou escopo e janela; (5) 'result' ganhou forma; (6) causality.cause virou obrigatório quando actor=AUTOMATION — é esse elo que torna a detecção de loop possível.",
+  "$defs": {
+    "CommandStatus": {
+      "enum": [
+        "REQUESTED",
+        "ACCEPTED",
+        "REJECTED",
+        "SENT",
+        "ACKNOWLEDGED",
+        "EXECUTING",
+        "CONFIRMED",
+        "COMPLETED",
+        "FAILED",
+        "TIMEOUT",
+        "CANCELLED",
+        "EXPIRED",
+        "UNKNOWN_OUTCOME"
+      ],
+      "description": "Não-durável: REQUESTED→ACCEPTED→SENT→ACKNOWLEDGED→CONFIRMED (terminal). Durável: ...→ACKNOWLEDGED→EXECUTING→COMPLETED (terminal). Terminais: CONFIRMED, COMPLETED, REJECTED, FAILED, TIMEOUT, CANCELLED, EXPIRED, UNKNOWN_OUTCOME."
+    },
+    "CausalityRef": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "O que causou isto. Um comando pode ser causado por um evento; um evento, por um comando. Por isso o tipo é explícito.",
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "EVENT",
+            "COMMAND"
+          ]
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ErrorCode": {
+      "enum": [
+        "DEVICE_UNREACHABLE",
+        "DEVICE_RETIRED",
+        "ADAPTER_UNAVAILABLE",
+        "UNSUPPORTED_ACTION",
+        "INVALID_PARAMETER",
+        "SAFETY_LIMIT_EXCEEDED",
+        "RATE_LIMITED",
+        "LOOP_GUARD_TRIPPED",
+        "NOT_AUTHORIZED",
+        "DEVICE_REJECTED",
+        "INTERNAL_ERROR"
+      ]
+    }
+  },
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "id",
+    "actor",
+    "origin",
+    "target",
+    "parameters",
+    "criticality",
+    "status",
+    "statusHistory",
+    "requestedAt",
+    "timeoutMs",
+    "idempotencyKey",
+    "causality"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 2
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^cmd_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "actor": {
+      "type": "object",
+      "description": "QUEM quis. Distinto de 'origin', que é POR ONDE veio.",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "USER",
+            "AUTOMATION",
+            "SCHEDULE",
+            "SYSTEM",
+            "ADAPTER"
+          ]
+        },
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "origin": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "UI",
+            "API",
+            "VOICE",
+            "PHYSICAL",
+            "AUTOMATION_ENGINE",
+            "SCHEDULER",
+            "ADAPTER"
+          ]
+        },
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "required": [
+        "deviceId",
+        "action"
+      ],
+      "properties": {
+        "deviceId": {
+          "type": "string",
+          "pattern": "^dev_"
+        },
+        "action": {
+          "type": "string",
+          "description": "Chave de uma ActionDescriptor do device."
+        }
+      },
+      "additionalProperties": false
+    },
+    "parameters": {
+      "type": "object",
+      "description": "Validado contra ActionDescriptor.parameters ANTES de sair de REQUESTED. Falha de validação → REJECTED com INVALID_PARAMETER.",
+      "additionalProperties": true
+    },
+    "criticality": {
+      "$ref": "https://schemas.atlas.local/v0.2/device.json#/$defs/Criticality",
+      "description": "Resolvida no momento da criação (action.criticality, ou device.defaultCriticality). Congelada aqui para que a política aplicada seja auditável mesmo que o device mude depois."
+    },
+    "status": {
+      "$ref": "#/$defs/CommandStatus",
+      "description": "Denormalizado para consulta. A FONTE DA VERDADE é statusHistory."
+    },
+    "statusHistory": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "status",
+          "at"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/$defs/CommandStatus"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "requestedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "dispatchedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "executingSince": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Só para actions duráveis. Quando a execução física começou."
+    },
+    "expectedCompletionAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Só para actions duráveis. Ultrapassar sem COMPLETED é overrun e deve gerar alerta — é o caso da bomba que não desligou."
+    },
+    "completedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Instante do estado TERMINAL, qualquer que ele seja. Para action durável significa fim da EXECUÇÃO, não fim do despacho — a ambiguidade da v0.1."
+    },
+    "timeoutMs": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Prazo para chegar a ACKNOWLEDGED. NÃO limita a execução de action durável — para isso existe safety.maxExecutionSeconds."
+    },
+    "idempotencyKey": {
+      "type": "object",
+      "description": "Sem escopo e janela, a chave é decorativa.",
+      "required": [
+        "value",
+        "windowSeconds"
+      ],
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "windowSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Único por (deviceId, action, value) dentro desta janela. Repetição dentro dela retorna o comando original em vez de criar outro."
+        }
+      },
+      "additionalProperties": false
+    },
+    "causality": {
+      "type": "object",
+      "required": [
+        "traceId",
+        "cause",
+        "depth"
+      ],
+      "properties": {
+        "traceId": {
+          "type": "string",
+          "description": "Nasce na CAUSA-RAIZ (evento físico, ação de usuário, disparo de timer) e propaga por tudo que descende dela. Nunca é regenerado no meio de uma cadeia."
+        },
+        "cause": {
+          "$ref": "#/$defs/CausalityRef"
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "ATENÇÃO: depth sozinho NÃO previne loop. Pega recursão descontrolada, mas não o ciclo A→B→A que reseta a profundidade e dispara para sempre. É por isso que existe loopGuard abaixo."
+        },
+        "loopGuard": {
+          "type": "object",
+          "description": "Proteção real contra ciclo. O Core recusa o comando (REJECTED / LOOP_GUARD_TRIPPED) se o par já disparou mais de N vezes na janela.",
+          "properties": {
+            "chainKey": {
+              "type": "string",
+              "description": "Ex.: 'aut_luz_presenca:dev_spot_bancada'. Contado por janela deslizante."
+            },
+            "occurrencesInWindow": {
+              "type": "integer"
+            },
+            "windowSeconds": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "cancellation": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "requestedByCommandId": {
+          "type": "string"
+        },
+        "actor": {
+          "type": "object"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "result": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Presente em todo estado terminal.",
+      "required": [
+        "outcome",
+        "at"
+      ],
+      "properties": {
+        "outcome": {
+          "enum": [
+            "SUCCESS",
+            "FAILURE",
+            "CANCELLED",
+            "UNKNOWN"
+          ]
+        },
+        "errorCode": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ErrorCode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "errorMessage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "adapterMessageId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "allOf": [
+    {
+      "$comment": "Comando emitido por automação DEVE apontar o evento que o disparou. É esse elo que torna a detecção de loop e o rastro causal possíveis.",
+      "if": {
+        "properties": {
+          "actor": {
+            "properties": {
+              "type": {
+                "const": "AUTOMATION"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        },
+        "required": [
+          "actor"
+        ]
+      },
+      "then": {
+        "properties": {
+          "causality": {
+            "properties": {
+              "cause": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "cause"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schemaVersion": 2,
+      "id": "cmd_040NFFC80BED3DYSJVERE2VYBM",
+      "actor": {
+        "type": "USER",
+        "id": "user_01JQRUBENS0000000000000001"
+      },
+      "origin": {
+        "type": "VOICE",
+        "id": "dev_0Q2NPWNRWZ9P7F6SX7Z9E7ZQWP"
+      },
+      "target": {
+        "deviceId": "dev_0FP7YD0EAFCCA3GTDKJHHWM99T",
+        "action": "set_brightness"
+      },
+      "parameters": {
+        "value": 80
+      },
+      "criticality": "COSMETIC",
+      "status": "CONFIRMED",
+      "statusHistory": [
+        {
+          "status": "REQUESTED",
+          "at": "2026-08-22T23:25:00.000-03:00",
+          "detail": null
+        },
+        {
+          "status": "ACCEPTED",
+          "at": "2026-08-22T23:25:00.014-03:00",
+          "detail": null
+        },
+        {
+          "status": "SENT",
+          "at": "2026-08-22T23:25:00.031-03:00",
+          "detail": "mqtt-98342"
+        },
+        {
+          "status": "ACKNOWLEDGED",
+          "at": "2026-08-22T23:25:00.192-03:00",
+          "detail": null
+        },
+        {
+          "status": "CONFIRMED",
+          "at": "2026-08-22T23:25:00.640-03:00",
+          "detail": null
+        }
+      ],
+      "requestedAt": "2026-08-22T23:25:00.000-03:00",
+      "dispatchedAt": "2026-08-22T23:25:00.031-03:00",
+      "executingSince": null,
+      "expectedCompletionAt": null,
+      "completedAt": "2026-08-22T23:25:00.640-03:00",
+      "timeoutMs": 5000,
+      "idempotencyKey": {
+        "value": "idem_01JQCOMMAND0000000000001A",
+        "windowSeconds": 10
+      },
+      "causality": {
+        "traceId": "trace_01JQVOICE00000000000001A",
+        "cause": null,
+        "depth": 0
+      },
+      "cancellation": null,
+      "result": {
+        "outcome": "SUCCESS",
+        "errorCode": null,
+        "errorMessage": null,
+        "adapterMessageId": "mqtt-98342",
+        "at": "2026-08-22T23:25:00.640-03:00"
+      }
+    },
+    {
+      "schemaVersion": 2,
+      "id": "cmd_0PV7A692G7JKWTH7CGK8K7PJ5D",
+      "actor": {
+        "type": "AUTOMATION",
+        "id": "aut_01JQIRRIGAHORTA0000000001"
+      },
+      "origin": {
+        "type": "AUTOMATION_ENGINE",
+        "id": null
+      },
+      "target": {
+        "deviceId": "dev_05XDMCX09Q13838YE392X2MSD6",
+        "action": "start_pumping"
+      },
+      "parameters": {
+        "duration": 600
+      },
+      "criticality": "CRITICAL",
+      "status": "EXECUTING",
+      "statusHistory": [
+        {
+          "status": "REQUESTED",
+          "at": "2026-08-23T05:30:00-03:00",
+          "detail": null
+        },
+        {
+          "status": "ACCEPTED",
+          "at": "2026-08-23T05:30:00-03:00",
+          "detail": "safety ok: 600s <= 1800s"
+        },
+        {
+          "status": "SENT",
+          "at": "2026-08-23T05:30:01-03:00",
+          "detail": null
+        },
+        {
+          "status": "ACKNOWLEDGED",
+          "at": "2026-08-23T05:30:02-03:00",
+          "detail": null
+        },
+        {
+          "status": "EXECUTING",
+          "at": "2026-08-23T05:30:03-03:00",
+          "detail": "vazão confirmada em 42 L/min"
+        }
+      ],
+      "requestedAt": "2026-08-23T05:30:00-03:00",
+      "dispatchedAt": "2026-08-23T05:30:01-03:00",
+      "executingSince": "2026-08-23T05:30:03-03:00",
+      "expectedCompletionAt": "2026-08-23T05:40:03-03:00",
+      "completedAt": null,
+      "timeoutMs": 5000,
+      "idempotencyKey": {
+        "value": "irrigacao_horta_2026-08-23_manha",
+        "windowSeconds": 3600
+      },
+      "causality": {
+        "traceId": "trace_01JQSOLOSECO00000000001A",
+        "cause": {
+          "type": "EVENT",
+          "id": "evt_087NP30N76WZ74QG5F4MZE390T"
+        },
+        "depth": 1,
+        "loopGuard": {
+          "chainKey": "aut_01JQIRRIGAHORTA0000000001:dev_05XDMCX09Q13838YE392X2MSD6",
+          "occurrencesInWindow": 1,
+          "windowSeconds": 3600
+        }
+      },
+      "cancellation": null,
+      "result": null
+    },
+    {
+      "schemaVersion": 2,
+      "id": "cmd_0DW7705DY4BD6NX30SS41D7T0B",
+      "actor": {
+        "type": "AUTOMATION",
+        "id": "aut_01JQIRRIGAHORTA0000000001"
+      },
+      "origin": {
+        "type": "AUTOMATION_ENGINE",
+        "id": null
+      },
+      "target": {
+        "deviceId": "dev_05XDMCX09Q13838YE392X2MSD6",
+        "action": "start_pumping"
+      },
+      "parameters": {
+        "duration": 600
+      },
+      "criticality": "CRITICAL",
+      "status": "UNKNOWN_OUTCOME",
+      "statusHistory": [
+        {
+          "status": "REQUESTED",
+          "at": "2026-08-23T05:30:00-03:00",
+          "detail": null
+        },
+        {
+          "status": "ACCEPTED",
+          "at": "2026-08-23T05:30:00-03:00",
+          "detail": null
+        },
+        {
+          "status": "SENT",
+          "at": "2026-08-23T05:30:01-03:00",
+          "detail": null
+        },
+        {
+          "status": "UNKNOWN_OUTCOME",
+          "at": "2026-08-23T05:34:12-03:00",
+          "detail": "Core reiniciou com o comando em SENT. Criticidade CRITICAL: não reenviar. Requer verificação do estado físico."
+        }
+      ],
+      "requestedAt": "2026-08-23T05:30:00-03:00",
+      "dispatchedAt": "2026-08-23T05:30:01-03:00",
+      "executingSince": null,
+      "expectedCompletionAt": null,
+      "completedAt": "2026-08-23T05:34:12-03:00",
+      "timeoutMs": 5000,
+      "idempotencyKey": {
+        "value": "irrigacao_horta_2026-08-23_manha",
+        "windowSeconds": 3600
+      },
+      "causality": {
+        "traceId": "trace_01JQSOLOSECO00000000001A",
+        "cause": {
+          "type": "EVENT",
+          "id": "evt_087NP30N76WZ74QG5F4MZE390T"
+        },
+        "depth": 1
+      },
+      "cancellation": null,
+      "result": {
+        "outcome": "UNKNOWN",
+        "errorCode": null,
+        "errorMessage": "Estado físico da bomba desconhecido após restart.",
+        "adapterMessageId": null,
+        "at": "2026-08-23T05:34:12-03:00"
+      }
+    }
+  ],
+  "exampleNotes": [
+    "Comando simples por voz, não durável.",
+    "O caso que a v0.1 não representava: action durável e crítica, emitida por automação, em execução. Note EXECUTING, expectedCompletionAt, e a causa apontando o evento que disparou.",
+    "Restart do Core com comando crítico em voo. NUNCA reenviar automaticamente: marcar e exigir resolução explícita."
+  ]
+}

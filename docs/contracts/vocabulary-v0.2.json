@@ -1,0 +1,153 @@
+{
+  "$comment": "ATLAS — Vocabulário controlado. NÃO é um JSON Schema: é o DADO que os schemas referenciam. Fonte única de verdade para semanticType, unit, deviceClass, valueType e tipos de evento de sistema. Nenhum adapter pode inventar valores fora daqui; para adicionar, edite este arquivo.",
+
+  "schemaVersion": 1,
+  "vocabularyVersion": "0.2.0",
+
+  "conventions": {
+    "idPrefixes": {
+      "environment": "env_",
+      "location": "loc_",
+      "device": "dev_",
+      "command": "cmd_",
+      "event": "evt_",
+      "automation": "aut_",
+      "trace": "trace_",
+      "adapterInstance": "(livre, ex.: mqtt.home)"
+    },
+    "idFormat": "prefixo + ULID. IDs são opacos e imutáveis. NUNCA embutir em um id nada que descreva a coisa (localização, tipo, nome). O que descreve vai em 'name', que é humano e mutável.",
+    "propertyAddress": "Property NÃO tem id global. É endereçada por (deviceId, key). Forma canônica em texto: 'dev_0GQ1S4FMZ55Q7ECRHAC8DTSC7K/ambient_temperature'.",
+    "timestamps": "RFC 3339 com offset explícito. Sempre gravar o offset, nunca assumir o fuso do host.",
+    "dimensionless": "Grandeza sem unidade usa a unidade 'NONE'. O campo 'unit' é SEMPRE obrigatório e nunca nulo — evita a ambiguidade entre ausente e null no lado Java.",
+    "unitAuthority": "O PropertyDescriptor é a autoridade sobre a unidade. O Event carrega uma cópia intencional (é registro imutável e precisa ser legível daqui a anos, mesmo que o descriptor mude). O PropertyState NÃO carrega unidade — é sempre lido junto do descriptor."
+  },
+
+  "valueTypes": [
+    { "key": "BOOLEAN", "javaType": "Boolean" },
+    { "key": "INTEGER", "javaType": "Long" },
+    { "key": "DECIMAL", "javaType": "BigDecimal", "note": "Nunca usar double para grandeza física persistida." },
+    { "key": "STRING", "javaType": "String" },
+    { "key": "ENUM", "javaType": "String", "note": "Valores permitidos declarados em valueDomain.allowedValues." },
+    { "key": "DURATION", "javaType": "Duration", "note": "Sempre acompanhado de unidade de tempo." },
+    { "key": "TIMESTAMP", "javaType": "OffsetDateTime" }
+  ],
+
+  "dimensions": [
+    "NONE", "TEMPERATURE", "RATIO", "POWER", "ENERGY", "VOLTAGE", "CURRENT",
+    "ILLUMINANCE", "PRESSURE", "FLOW_RATE", "VOLUME", "LENGTH", "MASS",
+    "DURATION", "SPEED", "CONCENTRATION", "SIGNAL", "COLOR_TEMPERATURE"
+  ],
+
+  "units": [
+    { "key": "NONE", "dimension": "NONE", "symbol": "", "canonical": true },
+
+    { "key": "CELSIUS", "dimension": "TEMPERATURE", "symbol": "°C", "canonical": true },
+    { "key": "FAHRENHEIT", "dimension": "TEMPERATURE", "symbol": "°F", "canonical": false, "toCanonical": { "multiply": 0.5555555555555556, "add": -17.77777777777778 } },
+    { "key": "KELVIN", "dimension": "TEMPERATURE", "symbol": "K", "canonical": false, "toCanonical": { "multiply": 1, "add": -273.15 } },
+
+    { "key": "PERCENT", "dimension": "RATIO", "symbol": "%", "canonical": true },
+    { "key": "RATIO_UNIT", "dimension": "RATIO", "symbol": "", "canonical": false, "toCanonical": { "multiply": 100, "add": 0 } },
+
+    { "key": "WATT", "dimension": "POWER", "symbol": "W", "canonical": true },
+    { "key": "KILOWATT", "dimension": "POWER", "symbol": "kW", "canonical": false, "toCanonical": { "multiply": 1000, "add": 0 } },
+
+    { "key": "WATT_HOUR", "dimension": "ENERGY", "symbol": "Wh", "canonical": false, "toCanonical": { "multiply": 0.001, "add": 0 } },
+    { "key": "KILOWATT_HOUR", "dimension": "ENERGY", "symbol": "kWh", "canonical": true },
+
+    { "key": "VOLT", "dimension": "VOLTAGE", "symbol": "V", "canonical": true },
+    { "key": "AMPERE", "dimension": "CURRENT", "symbol": "A", "canonical": true },
+
+    { "key": "LUX", "dimension": "ILLUMINANCE", "symbol": "lx", "canonical": true },
+
+    { "key": "HECTOPASCAL", "dimension": "PRESSURE", "symbol": "hPa", "canonical": true },
+    { "key": "BAR", "dimension": "PRESSURE", "symbol": "bar", "canonical": false, "toCanonical": { "multiply": 1000, "add": 0 } },
+    { "key": "PSI", "dimension": "PRESSURE", "symbol": "psi", "canonical": false, "toCanonical": { "multiply": 68.9476, "add": 0 } },
+
+    { "key": "LITERS_PER_MINUTE", "dimension": "FLOW_RATE", "symbol": "L/min", "canonical": true },
+    { "key": "CUBIC_METERS_PER_HOUR", "dimension": "FLOW_RATE", "symbol": "m³/h", "canonical": false, "toCanonical": { "multiply": 16.6667, "add": 0 } },
+
+    { "key": "LITER", "dimension": "VOLUME", "symbol": "L", "canonical": true },
+    { "key": "CUBIC_METER", "dimension": "VOLUME", "symbol": "m³", "canonical": false, "toCanonical": { "multiply": 1000, "add": 0 } },
+
+    { "key": "METER", "dimension": "LENGTH", "symbol": "m", "canonical": true },
+    { "key": "CENTIMETER", "dimension": "LENGTH", "symbol": "cm", "canonical": false, "toCanonical": { "multiply": 0.01, "add": 0 } },
+    { "key": "MILLIMETER", "dimension": "LENGTH", "symbol": "mm", "canonical": false, "toCanonical": { "multiply": 0.001, "add": 0 } },
+
+    { "key": "SECONDS", "dimension": "DURATION", "symbol": "s", "canonical": true },
+    { "key": "MINUTES", "dimension": "DURATION", "symbol": "min", "canonical": false, "toCanonical": { "multiply": 60, "add": 0 } },
+    { "key": "HOURS", "dimension": "DURATION", "symbol": "h", "canonical": false, "toCanonical": { "multiply": 3600, "add": 0 } },
+
+    { "key": "METERS_PER_SECOND", "dimension": "SPEED", "symbol": "m/s", "canonical": true },
+    { "key": "KILOMETERS_PER_HOUR", "dimension": "SPEED", "symbol": "km/h", "canonical": false, "toCanonical": { "multiply": 0.277778, "add": 0 } },
+
+    { "key": "PPM", "dimension": "CONCENTRATION", "symbol": "ppm", "canonical": true },
+    { "key": "DECIBEL_MILLIWATT", "dimension": "SIGNAL", "symbol": "dBm", "canonical": true },
+    { "key": "MIRED", "dimension": "COLOR_TEMPERATURE", "symbol": "mired", "canonical": false, "toCanonical": { "reciprocalMillion": true } },
+    { "key": "KELVIN_COLOR", "dimension": "COLOR_TEMPERATURE", "symbol": "K", "canonical": true }
+  ],
+
+  "semanticTypes": [
+    { "key": "temperature", "valueType": "DECIMAL", "canonicalUnit": "CELSIUS", "typicalFreshness": "PERIODIC" },
+    { "key": "humidity", "valueType": "DECIMAL", "canonicalUnit": "PERCENT", "typicalFreshness": "PERIODIC" },
+    { "key": "pressure", "valueType": "DECIMAL", "canonicalUnit": "HECTOPASCAL", "typicalFreshness": "PERIODIC" },
+    { "key": "illuminance", "valueType": "DECIMAL", "canonicalUnit": "LUX", "typicalFreshness": "PERIODIC" },
+    { "key": "co2", "valueType": "DECIMAL", "canonicalUnit": "PPM", "typicalFreshness": "PERIODIC" },
+
+    { "key": "presence", "valueType": "BOOLEAN", "canonicalUnit": "NONE", "typicalFreshness": "ON_CHANGE" },
+    { "key": "motion", "valueType": "BOOLEAN", "canonicalUnit": "NONE", "typicalFreshness": "ON_CHANGE" },
+    { "key": "contact", "valueType": "ENUM", "canonicalUnit": "NONE", "allowedValues": ["OPEN", "CLOSED"], "typicalFreshness": "ON_CHANGE" },
+    { "key": "lock_state", "valueType": "ENUM", "canonicalUnit": "NONE", "allowedValues": ["LOCKED", "UNLOCKED", "JAMMED"], "typicalFreshness": "ON_CHANGE" },
+
+    { "key": "power_state", "valueType": "ENUM", "canonicalUnit": "NONE", "allowedValues": ["ON", "OFF"], "typicalFreshness": "ON_CHANGE" },
+    { "key": "brightness", "valueType": "INTEGER", "canonicalUnit": "PERCENT", "typicalFreshness": "ON_CHANGE" },
+    { "key": "color_temperature", "valueType": "INTEGER", "canonicalUnit": "KELVIN_COLOR", "typicalFreshness": "ON_CHANGE" },
+    { "key": "position", "valueType": "INTEGER", "canonicalUnit": "PERCENT", "typicalFreshness": "ON_CHANGE", "note": "0 = fechado, 100 = aberto. Para cortinas, portões, válvulas proporcionais." },
+
+    { "key": "power", "valueType": "DECIMAL", "canonicalUnit": "WATT", "typicalFreshness": "PERIODIC" },
+    { "key": "energy", "valueType": "DECIMAL", "canonicalUnit": "KILOWATT_HOUR", "typicalFreshness": "PERIODIC", "note": "Acumulado monotônico. Reset do contador precisa ser detectado pelo Core." },
+    { "key": "voltage", "valueType": "DECIMAL", "canonicalUnit": "VOLT", "typicalFreshness": "PERIODIC" },
+    { "key": "current", "valueType": "DECIMAL", "canonicalUnit": "AMPERE", "typicalFreshness": "PERIODIC" },
+
+    { "key": "water_flow", "valueType": "DECIMAL", "canonicalUnit": "LITERS_PER_MINUTE", "typicalFreshness": "PERIODIC" },
+    { "key": "water_level", "valueType": "DECIMAL", "canonicalUnit": "PERCENT", "typicalFreshness": "PERIODIC" },
+    { "key": "soil_moisture", "valueType": "DECIMAL", "canonicalUnit": "PERCENT", "typicalFreshness": "PERIODIC" },
+    { "key": "rainfall", "valueType": "DECIMAL", "canonicalUnit": "MILLIMETER", "typicalFreshness": "PERIODIC" },
+    { "key": "wind_speed", "valueType": "DECIMAL", "canonicalUnit": "METERS_PER_SECOND", "typicalFreshness": "PERIODIC" },
+
+    { "key": "battery_level", "valueType": "INTEGER", "canonicalUnit": "PERCENT", "typicalFreshness": "PERIODIC" },
+    { "key": "signal_strength", "valueType": "INTEGER", "canonicalUnit": "DECIBEL_MILLIWATT", "typicalFreshness": "PERIODIC" }
+  ],
+
+  "deviceClasses": [
+    "LIGHT", "SWITCH", "OUTLET", "SENSOR", "CLIMATE", "COVER", "LOCK",
+    "CAMERA", "PUMP", "VALVE", "METER", "WEATHER_STATION", "CONTROLLER",
+    "HUB", "MEDIA", "OTHER"
+  ],
+
+  "systemEventTypes": {
+    "$comment": "Eventos EMITIDOS PELO CORE. Vocabulário FECHADO — um adapter não pode declarar um device com estes tipos. Eventos declarados por device (turned_on, door.opened, ...) são 'eventos semânticos', vocabulário aberto, validados contra o EventDescriptor do próprio device.",
+    "device": [
+      "device.discovered", "device.registered", "device.updated",
+      "device.retired", "device.rebound",
+      "device.online", "device.offline"
+    ],
+    "property": [
+      "property.changed", "property.became_stale", "property.became_unavailable"
+    ],
+    "command": [
+      "command.requested", "command.accepted", "command.sent",
+      "command.acknowledged", "command.executing", "command.confirmed",
+      "command.completed", "command.failed", "command.timeout",
+      "command.cancelled", "command.expired", "command.unknown_outcome"
+    ],
+    "automation": [
+      "automation.evaluated", "automation.triggered", "automation.suppressed"
+    ],
+    "adapter": [
+      "adapter.started", "adapter.stopped", "adapter.failed", "adapter.health_changed"
+    ],
+    "core": [
+      "core.started", "core.stopping"
+    ]
+  }
+}

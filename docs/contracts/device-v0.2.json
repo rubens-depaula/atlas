@@ -1,0 +1,596 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.atlas.local/v0.2/device.json",
+  "title": "ATLAS Device",
+  "description": "MUDANÇAS v0.1→v0.2: (1) properties/actions/events deixaram de ser arrays de string e passaram a ser descritores tipados; (2) criticality desceu para o nível da action, com o device apenas fornecendo o default; (3) lifecycle ganhou DISCOVERED e RETIRED; (4) 'source' é explicitamente MUTÁVEL, para permitir troca física de equipamento sem perder identidade, histórico e automações.",
+  "$defs": {
+    "Criticality": {
+      "enum": [
+        "COSMETIC",
+        "NORMAL",
+        "CRITICAL"
+      ],
+      "description": "COSMETIC: dispara e esquece, estado otimista permitido. NORMAL: aguarda ACK. CRITICAL: exige ACK, nunca atualiza estado otimisticamente, nunca é reenviado automaticamente após restart. Numa câmera, ler o stream é COSMETIC e apagar gravação é CRITICAL — por isso pertence à action, não ao device."
+    },
+    "ParameterDescriptor": {
+      "type": "object",
+      "required": [
+        "key",
+        "name",
+        "valueType",
+        "unit",
+        "required"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "valueType": {
+          "enum": [
+            "BOOLEAN",
+            "INTEGER",
+            "DECIMAL",
+            "STRING",
+            "ENUM",
+            "DURATION"
+          ]
+        },
+        "unit": {
+          "type": "string",
+          "description": "Chave em vocabulary.units. 'NONE' quando adimensional."
+        },
+        "valueDomain": {
+          "type": "object",
+          "properties": {
+            "min": {
+              "type": "number"
+            },
+            "max": {
+              "type": "number"
+            },
+            "step": {
+              "type": "number"
+            },
+            "allowedValues": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "default": {}
+      },
+      "additionalProperties": false
+    },
+    "ActionDescriptor": {
+      "type": "object",
+      "description": "Sem isto, nada valida set_brightness(500), a UI não consegue renderizar um controle, um LLM não consegue introspectar a action, e não existe onde declarar o limite máximo de uma bomba.",
+      "required": [
+        "key",
+        "name",
+        "parameters",
+        "durable"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ParameterDescriptor"
+          }
+        },
+        "criticality": {
+          "$ref": "#/$defs/Criticality",
+          "description": "Se ausente, herda device.defaultCriticality."
+        },
+        "durable": {
+          "type": "boolean",
+          "description": "true quando a action tem execução com duração (irrigar por 10 min). Habilita o estado EXECUTING no ciclo de vida do comando. Sem isto, CONFIRMED significaria 'a bomba ligou' e o modelo pararia de acompanhar exatamente no ponto em que importa."
+        },
+        "expectedDurationSeconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Para actions duráveis com duração fixa. Quando a duração vem por parâmetro, usar 'durationParameter'."
+        },
+        "durationParameter": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Chave do parâmetro que define a duração da execução."
+        },
+        "cancelAction": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "OBRIGATÓRIO quando durable=true e criticality=CRITICAL. Uma irrigação de 10 minutos que não pode ser interrompida viola a §18 do briefing."
+        },
+        "affectsProperties": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Keys de properties deste device que esta action altera. É o que permite estado otimista dirigido e revogação quando o comando falha."
+        },
+        "safety": {
+          "type": "object",
+          "description": "Restrições que o Core aplica ANTES de despachar, independentemente do que a automação pediu.",
+          "properties": {
+            "maxExecutionSeconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "minIntervalBetweenExecutionsSeconds": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "requiresConfirmation": {
+              "type": "boolean",
+              "default": false
+            },
+            "deadmanSupported": {
+              "type": "boolean",
+              "default": false,
+              "description": "O dispositivo desliga sozinho se perder contato com o Core durante a execução. Não é schema, é requisito de firmware — mas é declarado aqui para que o Core saiba se pode confiar."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "durable": {
+                "const": true
+              },
+              "criticality": {
+                "const": "CRITICAL"
+              }
+            },
+            "required": [
+              "durable",
+              "criticality"
+            ]
+          },
+          "then": {
+            "required": [
+              "cancelAction"
+            ]
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "SemanticEventDescriptor": {
+      "type": "object",
+      "description": "Eventos SEMÂNTICOS declarados pelo device (turned_on, door.opened). Vocabulário ABERTO. Não confundir com os eventos de SISTEMA (property.changed, device.offline), que têm vocabulário fechado em vocabulary.systemEventTypes e não podem ser declarados aqui.",
+      "required": [
+        "key",
+        "name"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.]{0,63}$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "payloadFields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ParameterDescriptor"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "id",
+    "name",
+    "environmentId",
+    "deviceClass",
+    "lifecycle",
+    "defaultCriticality",
+    "source",
+    "properties",
+    "actions",
+    "events",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 2
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^dev_[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "Opaco e IMUTÁVEL. Nunca embutir localização, tipo ou nome."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "description": "Humano e mutável."
+    },
+    "environmentId": {
+      "type": "string",
+      "pattern": "^env_"
+    },
+    "locationId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^loc_"
+    },
+    "parentDeviceId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Para dispositivos compostos: interruptor de 3 teclas, relé multicanal, hub Zigbee."
+    },
+    "deviceClass": {
+      "type": "string",
+      "description": "Chave em vocabulary.deviceClasses."
+    },
+    "lifecycle": {
+      "enum": [
+        "DISCOVERED",
+        "ACTIVE",
+        "DISABLED",
+        "RETIRED"
+      ],
+      "description": "DISCOVERED = encontrado, ainda não adotado. RETIRED = aposentado sem apagar; preserva histórico e faz automações órfãs darem erro claro em vez de NPE. ATENÇÃO: indisponibilidade NÃO entra aqui — é availability no PropertyState."
+    },
+    "defaultCriticality": {
+      "$ref": "#/$defs/Criticality"
+    },
+    "source": {
+      "type": "object",
+      "description": "MUTÁVEL POR DESIGN. Quando o spot queima e você instala um idêntico, o Z2MQTT dá um nativeId novo: re-aponte 'source' no device existente (operação device.rebound) em vez de criar um device novo. É o que preserva histórico e automações.",
+      "required": [
+        "adapterInstanceId",
+        "nativeId"
+      ],
+      "properties": {
+        "adapterInstanceId": {
+          "type": "string"
+        },
+        "nativeId": {
+          "type": "string"
+        },
+        "boundAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "properties": {
+      "type": "array",
+      "items": {
+        "$ref": "https://schemas.atlas.local/v0.2/property.json#/$defs/PropertyDescriptor"
+      }
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ActionDescriptor"
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SemanticEventDescriptor"
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Informação descritiva, nunca estrutural. Nada aqui pode influenciar comportamento do Core.",
+      "properties": {
+        "manufacturer": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "firmwareVersion": {
+          "type": "string"
+        },
+        "serialNumber": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "retiredAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schemaVersion": 2,
+      "id": "dev_0FP7YD0EAFCCA3GTDKJHHWM99T",
+      "name": "Spot da bancada 01",
+      "environmentId": "env_0K99XWAWPNWE8PWDAAV9PVN918",
+      "locationId": "loc_02MAF2TA8QSZHJH8838R0C2SM9",
+      "parentDeviceId": null,
+      "deviceClass": "LIGHT",
+      "lifecycle": "ACTIVE",
+      "defaultCriticality": "COSMETIC",
+      "source": {
+        "adapterInstanceId": "mqtt.home",
+        "nativeId": "zigbee2mqtt/spot_bancada_01",
+        "boundAt": "2026-08-20T10:00:00-03:00"
+      },
+      "properties": [
+        {
+          "deviceId": "dev_0FP7YD0EAFCCA3GTDKJHHWM99T",
+          "key": "power_state",
+          "name": "Ligado",
+          "semanticType": "power_state",
+          "valueType": "ENUM",
+          "unit": "NONE",
+          "valueDomain": {
+            "allowedValues": [
+              "ON",
+              "OFF"
+            ]
+          },
+          "readOnly": false,
+          "writeAction": "turn_on",
+          "freshnessPolicy": {
+            "mode": "ON_CHANGE"
+          }
+        },
+        {
+          "deviceId": "dev_0FP7YD0EAFCCA3GTDKJHHWM99T",
+          "key": "brightness",
+          "name": "Intensidade",
+          "semanticType": "brightness",
+          "valueType": "INTEGER",
+          "unit": "PERCENT",
+          "valueDomain": {
+            "min": 0,
+            "max": 100,
+            "step": 1
+          },
+          "readOnly": false,
+          "writeAction": "set_brightness",
+          "freshnessPolicy": {
+            "mode": "ON_CHANGE"
+          }
+        }
+      ],
+      "actions": [
+        {
+          "key": "turn_on",
+          "name": "Ligar",
+          "parameters": [],
+          "durable": false,
+          "affectsProperties": [
+            "power_state"
+          ]
+        },
+        {
+          "key": "turn_off",
+          "name": "Desligar",
+          "parameters": [],
+          "durable": false,
+          "affectsProperties": [
+            "power_state"
+          ]
+        },
+        {
+          "key": "set_brightness",
+          "name": "Definir intensidade",
+          "parameters": [
+            {
+              "key": "value",
+              "name": "Intensidade",
+              "valueType": "INTEGER",
+              "unit": "PERCENT",
+              "valueDomain": {
+                "min": 0,
+                "max": 100,
+                "step": 1
+              },
+              "required": true
+            }
+          ],
+          "durable": false,
+          "affectsProperties": [
+            "brightness",
+            "power_state"
+          ]
+        }
+      ],
+      "events": [
+        {
+          "key": "turned_on",
+          "name": "Ligou"
+        },
+        {
+          "key": "turned_off",
+          "name": "Desligou"
+        }
+      ],
+      "metadata": {
+        "manufacturer": "Generic",
+        "model": "Zigbee Spot"
+      },
+      "createdAt": "2026-08-20T10:00:00-03:00",
+      "updatedAt": "2026-08-20T10:00:00-03:00",
+      "retiredAt": null
+    },
+    {
+      "schemaVersion": 2,
+      "id": "dev_05XDMCX09Q13838YE392X2MSD6",
+      "name": "Bomba do poço",
+      "environmentId": "env_0B2RTAWW9DNDSSF63B8M1Q9937",
+      "locationId": "loc_0XCMR3WSVHDNNQ11QC7G99HS7Y",
+      "parentDeviceId": null,
+      "deviceClass": "PUMP",
+      "lifecycle": "ACTIVE",
+      "defaultCriticality": "CRITICAL",
+      "source": {
+        "adapterInstanceId": "mqtt.chacara",
+        "nativeId": "esphome/bomba_poco/relay",
+        "boundAt": "2026-08-21T14:30:00-03:00"
+      },
+      "properties": [
+        {
+          "deviceId": "dev_05XDMCX09Q13838YE392X2MSD6",
+          "key": "power_state",
+          "name": "Bomba ligada",
+          "semanticType": "power_state",
+          "valueType": "ENUM",
+          "unit": "NONE",
+          "valueDomain": {
+            "allowedValues": [
+              "ON",
+              "OFF"
+            ]
+          },
+          "readOnly": false,
+          "writeAction": "start_pumping",
+          "freshnessPolicy": {
+            "mode": "ON_CHANGE",
+            "heartbeatSeconds": 60
+          }
+        },
+        {
+          "deviceId": "dev_05XDMCX09Q13838YE392X2MSD6",
+          "key": "water_flow",
+          "name": "Vazão",
+          "semanticType": "water_flow",
+          "valueType": "DECIMAL",
+          "unit": "LITERS_PER_MINUTE",
+          "valueDomain": {
+            "min": 0,
+            "max": 200
+          },
+          "readOnly": true,
+          "freshnessPolicy": {
+            "mode": "PERIODIC",
+            "expectedIntervalSeconds": 10,
+            "staleAfterSeconds": 60
+          }
+        }
+      ],
+      "actions": [
+        {
+          "key": "start_pumping",
+          "name": "Bombear",
+          "parameters": [
+            {
+              "key": "duration",
+              "name": "Duração",
+              "valueType": "DURATION",
+              "unit": "SECONDS",
+              "valueDomain": {
+                "min": 10,
+                "max": 1800
+              },
+              "required": true,
+              "default": 300
+            }
+          ],
+          "criticality": "CRITICAL",
+          "durable": true,
+          "durationParameter": "duration",
+          "cancelAction": "stop_pumping",
+          "affectsProperties": [
+            "power_state"
+          ],
+          "safety": {
+            "maxExecutionSeconds": 1800,
+            "minIntervalBetweenExecutionsSeconds": 120,
+            "requiresConfirmation": false,
+            "deadmanSupported": true
+          }
+        },
+        {
+          "key": "stop_pumping",
+          "name": "Parar",
+          "parameters": [],
+          "criticality": "CRITICAL",
+          "durable": false,
+          "affectsProperties": [
+            "power_state"
+          ]
+        }
+      ],
+      "events": [
+        {
+          "key": "water_flow_started",
+          "name": "Fluxo detectado"
+        },
+        {
+          "key": "dry_run_detected",
+          "name": "Bomba girando sem água",
+          "payloadFields": [
+            {
+              "key": "seconds_without_flow",
+              "name": "Segundos sem vazão",
+              "valueType": "INTEGER",
+              "unit": "SECONDS",
+              "required": true
+            }
+          ]
+        }
+      ],
+      "metadata": {
+        "manufacturer": "Próprio",
+        "model": "ESP32 + relé 30A"
+      },
+      "createdAt": "2026-08-21T14:30:00-03:00",
+      "updatedAt": "2026-08-21T14:30:00-03:00",
+      "retiredAt": null
+    }
+  ],
+  "exampleNotes": [
+    null,
+    "O caso que a v0.1 não conseguia representar: action durável, crítica, cancelável, com limite de segurança."
+  ]
+}

@@ -1,0 +1,340 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.atlas.local/v0.2/event.json",
+  "title": "ATLAS Event",
+  "description": "MUDANÇAS v0.1→v0.2: (1) 'category' separa eventos de SISTEMA (vocabulário fechado, emitidos pelo Core) de eventos SEMÂNTICOS (declarados por device); (2) subject de property passou a usar (deviceId, key) em vez de id global; (3) 'cause' ganhou forma tipada; (4) existe automation.evaluated — o evento que registra uma automação que AVALIOU E NÃO AGIU, sem o qual 'por que a bomba não ligou hoje?' é irrespondível.",
+  "$comment": "REGRA DE IMUTABILIDADE: evento nunca é atualizado nem apagado. Por isso ele carrega cópia da unidade — precisa ser legível daqui a três anos mesmo que o PropertyDescriptor tenha mudado. Essa duplicação é intencional; a do PropertyState não era, e foi removida.",
+  "$defs": {
+    "EventSubject": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "deviceId"
+          ],
+          "properties": {
+            "type": {
+              "const": "DEVICE"
+            },
+            "deviceId": {
+              "type": "string",
+              "pattern": "^dev_"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "deviceId",
+            "key"
+          ],
+          "properties": {
+            "type": {
+              "const": "PROPERTY"
+            },
+            "deviceId": {
+              "type": "string",
+              "pattern": "^dev_"
+            },
+            "key": {
+              "type": "string",
+              "description": "Endereço da property dentro do device. Property não tem id global."
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "id"
+          ],
+          "properties": {
+            "type": {
+              "enum": [
+                "COMMAND",
+                "AUTOMATION",
+                "ADAPTER",
+                "CORE",
+                "ENVIRONMENT",
+                "LOCATION"
+              ]
+            },
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "CausalityRef": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "EVENT",
+            "COMMAND"
+          ]
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "id",
+    "category",
+    "type",
+    "subject",
+    "source",
+    "occurredAt",
+    "recordedAt",
+    "causality",
+    "payload"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 2
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^evt_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "category": {
+      "enum": [
+        "SYSTEM",
+        "SEMANTIC"
+      ],
+      "description": "SYSTEM: 'type' deve estar em vocabulary.systemEventTypes (fechado). SEMANTIC: 'type' deve estar declarado em device.events (aberto). Um adapter NÃO pode declarar um device com evento de categoria SYSTEM."
+    },
+    "type": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_.]{0,63}$"
+    },
+    "subject": {
+      "$ref": "#/$defs/EventSubject"
+    },
+    "source": {
+      "type": "object",
+      "description": "Quem gravou o evento. Distinto de 'subject', que é sobre o que ele fala.",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "ADAPTER",
+            "CORE",
+            "AUTOMATION_ENGINE",
+            "USER",
+            "SCHEDULER"
+          ]
+        },
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Quando aconteceu no mundo físico. Pode vir do relógio do dispositivo."
+    },
+    "recordedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Quando o Core gravou. Sempre relógio do Core. Ordenação e replay usam este campo."
+    },
+    "causality": {
+      "type": "object",
+      "required": [
+        "traceId",
+        "cause",
+        "depth"
+      ],
+      "properties": {
+        "traceId": {
+          "type": "string",
+          "description": "Nasce na causa-raiz e propaga por toda a cadeia descendente."
+        },
+        "cause": {
+          "$ref": "#/$defs/CausalityRef"
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schemaVersion": 2,
+      "id": "evt_0KQC161AA9BFY1AW638XSKK1PN",
+      "category": "SYSTEM",
+      "type": "property.changed",
+      "subject": {
+        "type": "PROPERTY",
+        "deviceId": "dev_00YY9CM9WDWVYA4G5ENXY6RC27",
+        "key": "ambient_temperature"
+      },
+      "source": {
+        "type": "ADAPTER",
+        "id": "mqtt.home"
+      },
+      "occurredAt": "2026-08-22T23:17:04-03:00",
+      "recordedAt": "2026-08-22T23:17:05-03:00",
+      "causality": {
+        "traceId": "trace_01JQTRACE0000000000001A",
+        "cause": null,
+        "depth": 0
+      },
+      "payload": {
+        "previousValue": 23.8,
+        "value": 24.0,
+        "unit": "CELSIUS",
+        "semanticType": "temperature"
+      }
+    },
+    {
+      "schemaVersion": 2,
+      "id": "evt_0JVZDWT669JCSDY19JGK6Q47MB",
+      "category": "SYSTEM",
+      "type": "automation.evaluated",
+      "subject": {
+        "type": "AUTOMATION",
+        "id": "aut_01JQIRRIGAHORTA0000000001"
+      },
+      "source": {
+        "type": "AUTOMATION_ENGINE",
+        "id": null
+      },
+      "occurredAt": "2026-08-23T14:02:11-03:00",
+      "recordedAt": "2026-08-23T14:02:11-03:00",
+      "causality": {
+        "traceId": "trace_01JQSOLOSECO00000000001A",
+        "cause": {
+          "type": "EVENT",
+          "id": "evt_087NP30N76WZ74QG5F4MZE390T"
+        },
+        "depth": 1
+      },
+      "payload": {
+        "triggered": false,
+        "triggerEventType": "property.changed",
+        "conditions": [
+          {
+            "expression": "soil_moisture < 30",
+            "result": true,
+            "observed": 22.4,
+            "unit": "PERCENT"
+          },
+          {
+            "expression": "hora_entre(05:00, 07:00)",
+            "result": false,
+            "observed": "14:02:11-03:00"
+          }
+        ],
+        "blockedBy": "hora_entre(05:00, 07:00)",
+        "actionsSuppressed": [
+          {
+            "deviceId": "dev_05XDMCX09Q13838YE392X2MSD6",
+            "action": "start_pumping"
+          }
+        ]
+      }
+    },
+    {
+      "schemaVersion": 2,
+      "id": "evt_0NBEKQ3VR9MN7QWCVK0Y7A3A1H",
+      "category": "SEMANTIC",
+      "type": "dry_run_detected",
+      "subject": {
+        "type": "DEVICE",
+        "deviceId": "dev_05XDMCX09Q13838YE392X2MSD6"
+      },
+      "source": {
+        "type": "ADAPTER",
+        "id": "mqtt.chacara"
+      },
+      "occurredAt": "2026-08-23T05:31:20-03:00",
+      "recordedAt": "2026-08-23T05:31:20-03:00",
+      "causality": {
+        "traceId": "trace_01JQSOLOSECO00000000001A",
+        "cause": {
+          "type": "COMMAND",
+          "id": "cmd_0PV7A692G7JKWTH7CGK8K7PJ5D"
+        },
+        "depth": 2
+      },
+      "payload": {
+        "seconds_without_flow": 17
+      }
+    },
+    {
+      "schemaVersion": 2,
+      "id": "evt_05YT2K8TMJMCF18FAWZGZB7N1F",
+      "category": "SYSTEM",
+      "type": "automation.suppressed",
+      "subject": {
+        "type": "AUTOMATION",
+        "id": "aut_01JQLUZPRESENCA000000001"
+      },
+      "source": {
+        "type": "AUTOMATION_ENGINE",
+        "id": null
+      },
+      "occurredAt": "2026-08-23T19:44:02-03:00",
+      "recordedAt": "2026-08-23T19:44:02-03:00",
+      "causality": {
+        "traceId": "trace_01JQPRESENCA000000000001",
+        "cause": {
+          "type": "EVENT",
+          "id": "evt_064DP0Z3S0HP7TK24CRMKJVW15"
+        },
+        "depth": 7
+      },
+      "payload": {
+        "reason": "LOOP_GUARD_TRIPPED",
+        "chainKey": "aut_01JQLUZPRESENCA000000001:dev_0FP7YD0EAFCCA3GTDKJHHWM99T",
+        "occurrencesInWindow": 12,
+        "windowSeconds": 60,
+        "limit": 10
+      }
+    }
+  ],
+  "exampleNotes": [
+    "Evento de sistema: mudança de property. Note subject com deviceId+key, e a unidade copiada de propósito.",
+    "O evento que faltava na v0.1. É ele que responde 'por que a bomba do poço não ligou hoje?' — e é o que faz a camada de IA da §21 funcionar de graça mais tarde, porque o modelo já contém a resposta.",
+    "Evento semântico declarado pelo próprio device, com payload validado contra o SemanticEventDescriptor.",
+    "Loop barrado. Sem este registro, um ciclo A→B→A vira mistério — e um relé queimado."
+  ]
+}

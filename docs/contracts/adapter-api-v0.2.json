@@ -1,0 +1,986 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.atlas.local/v0.2/adapter-api.json",
+  "title": "ATLAS Adapter API",
+  "description": "MUDANÇAS v0.1→v0.2: (1) lifecycle e health deixaram de compartilhar enum — o estado que mais importa observar é RUNNING+UNHEALTHY (adapter no ar, broker caído), e na v0.1 ele era inexprimível; (2) existe a direção de ENTRADA (Inbound), que era o payload mais importante e o único ausente; (3) erro tem forma tipada; (4) 'exampleX' virou $defs de verdade.",
+  "$comment": "FRONTEIRA DO LAB: este é o ÚNICO contrato pelo qual o ATLAS Lab fala com o Core. Nenhum código de experimento importa internals do domínio. Em Gradle: o módulo do Lab depende apenas de 'atlas-adapter-api', nunca de 'atlas-core'. É isso que torna a promessa da §28.8 do briefing verdadeira por compilação em vez de por disciplina — e que faz você ser o primeiro consumidor externo do seu próprio contrato.",
+  "$defs": {
+    "AdapterDescriptor": {
+      "type": "object",
+      "description": "Identidade e capacidades declaradas de uma instância de adapter.",
+      "required": [
+        "instanceId",
+        "adapterType",
+        "name",
+        "contractVersion",
+        "implementationVersion",
+        "features"
+      ],
+      "properties": {
+        "instanceId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9._-]{0,63}$"
+        },
+        "adapterType": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "contractVersion": {
+          "type": "integer",
+          "description": "Versão desta API que o adapter fala. O Core recusa carregar um adapter cuja contractVersion ele não suporta."
+        },
+        "implementationVersion": {
+          "type": "string"
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "DISCOVERY",
+              "READ",
+              "EXECUTE",
+              "SUBSCRIBE",
+              "HEALTH",
+              "CANCEL"
+            ]
+          },
+          "description": "Negociação de capacidade. O Core nunca chama o que não foi declarado. CANCEL é obrigatório para expor qualquer action durável e crítica."
+        },
+        "origin": {
+          "enum": [
+            "CORE",
+            "LAB",
+            "THIRD_PARTY"
+          ],
+          "default": "CORE",
+          "description": "Adapter de origem LAB é isolável e removível: retirar um LAB nunca pode deixar o Core inconsistente."
+        }
+      },
+      "additionalProperties": false
+    },
+    "AdapterLifecycle": {
+      "type": "object",
+      "description": "O adapter foi carregado e iniciado? Pergunta DIFERENTE de health.",
+      "required": [
+        "status",
+        "since"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "STOPPED",
+            "STARTING",
+            "RUNNING",
+            "STOPPING",
+            "FAILED"
+          ]
+        },
+        "since": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "failureReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "AdapterHealth": {
+      "type": "object",
+      "description": "Ele está funcionando AGORA? Ortogonal ao lifecycle. RUNNING + UNHEALTHY é um estado real e é o que você quer ver na tela às 23h de domingo.",
+      "required": [
+        "status",
+        "checkedAt"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "HEALTHY",
+            "DEGRADED",
+            "UNHEALTHY",
+            "UNKNOWN"
+          ]
+        },
+        "checkedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "summary": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "DiscoveredDevice": {
+      "type": "object",
+      "description": "Proposta do adapter. NÃO cria device: entra como lifecycle=DISCOVERED e exige adoção explícita.",
+      "required": [
+        "nativeId",
+        "suggestedName",
+        "deviceClass",
+        "properties",
+        "actions"
+      ],
+      "properties": {
+        "nativeId": {
+          "type": "string"
+        },
+        "suggestedName": {
+          "type": "string"
+        },
+        "deviceClass": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "properties": {
+          "type": "array",
+          "description": "Descritores parciais: o adapter informa key, semanticType, unit, domínio e política de frescor. O Core preenche deviceId na adoção.",
+          "items": {
+            "type": "object",
+            "required": [
+              "key",
+              "semanticType",
+              "unit",
+              "readOnly",
+              "freshnessPolicy"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "semanticType": {
+                "type": "string"
+              },
+              "valueType": {
+                "type": "string"
+              },
+              "unit": {
+                "type": "string"
+              },
+              "valueDomain": {
+                "type": "object"
+              },
+              "readOnly": {
+                "type": "boolean"
+              },
+              "writeAction": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "freshnessPolicy": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "https://schemas.atlas.local/v0.2/device.json#/$defs/ActionDescriptor"
+          }
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "InboundMessage": {
+      "type": "object",
+      "description": "Adapter → Core, assíncrono, via SUBSCRIBE. É uma união discriminada por kind: cada kind exige exatamente o payload correspondente e rejeita payloads de outros kinds.",
+      "required": [
+        "adapterInstanceId",
+        "kind",
+        "at"
+      ],
+      "properties": {
+        "adapterInstanceId": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "kind": {
+          "enum": [
+            "OBSERVATION",
+            "SEMANTIC_EVENT",
+            "AVAILABILITY",
+            "COMMAND_UPDATE",
+            "DEVICE_APPEARED",
+            "DEVICE_DISAPPEARED"
+          ]
+        },
+        "observation": {
+          "type": "object",
+          "required": [
+            "deviceNativeId",
+            "propertyKey",
+            "value",
+            "unit",
+            "observedAt",
+            "confidence"
+          ],
+          "properties": {
+            "deviceNativeId": {
+              "type": "string"
+            },
+            "propertyKey": {
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "number",
+                "string",
+                "boolean",
+                "null"
+              ]
+            },
+            "unit": {
+              "type": "string"
+            },
+            "observedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "confidence": {
+              "enum": [
+                "CONFIRMED",
+                "ASSUMED"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "semanticEvent": {
+          "type": "object",
+          "required": [
+            "deviceNativeId",
+            "type"
+          ],
+          "properties": {
+            "deviceNativeId": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "occurredAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "payload": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "availability": {
+          "type": "object",
+          "required": [
+            "deviceNativeId",
+            "available"
+          ],
+          "properties": {
+            "deviceNativeId": {
+              "type": "string"
+            },
+            "available": {
+              "type": "boolean"
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "commandUpdate": {
+          "type": "object",
+          "description": "Atualização assíncrona de comando: ACK tardio, início/fim de execução durável, falha reportada pelo dispositivo.",
+          "required": [
+            "commandId",
+            "status"
+          ],
+          "properties": {
+            "commandId": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "ACKNOWLEDGED",
+                "EXECUTING",
+                "CONFIRMED",
+                "COMPLETED",
+                "FAILED",
+                "CANCELLED"
+              ]
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "error": {
+              "$ref": "#/$defs/AdapterError"
+            }
+          },
+          "additionalProperties": false
+        },
+        "deviceAppeared": {
+          "$ref": "#/$defs/DiscoveredDevice"
+        },
+        "deviceDisappeared": {
+          "type": "object",
+          "required": [
+            "deviceNativeId"
+          ],
+          "properties": {
+            "deviceNativeId": {
+              "type": "string"
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "OBSERVATION"
+            }
+          },
+          "required": [
+            "observation"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "semanticEvent"
+                ]
+              },
+              {
+                "required": [
+                  "availability"
+                ]
+              },
+              {
+                "required": [
+                  "commandUpdate"
+                ]
+              },
+              {
+                "required": [
+                  "deviceAppeared"
+                ]
+              },
+              {
+                "required": [
+                  "deviceDisappeared"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "SEMANTIC_EVENT"
+            }
+          },
+          "required": [
+            "semanticEvent"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "observation"
+                ]
+              },
+              {
+                "required": [
+                  "availability"
+                ]
+              },
+              {
+                "required": [
+                  "commandUpdate"
+                ]
+              },
+              {
+                "required": [
+                  "deviceAppeared"
+                ]
+              },
+              {
+                "required": [
+                  "deviceDisappeared"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "AVAILABILITY"
+            }
+          },
+          "required": [
+            "availability"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "observation"
+                ]
+              },
+              {
+                "required": [
+                  "semanticEvent"
+                ]
+              },
+              {
+                "required": [
+                  "commandUpdate"
+                ]
+              },
+              {
+                "required": [
+                  "deviceAppeared"
+                ]
+              },
+              {
+                "required": [
+                  "deviceDisappeared"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "COMMAND_UPDATE"
+            }
+          },
+          "required": [
+            "commandUpdate"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "observation"
+                ]
+              },
+              {
+                "required": [
+                  "semanticEvent"
+                ]
+              },
+              {
+                "required": [
+                  "availability"
+                ]
+              },
+              {
+                "required": [
+                  "deviceAppeared"
+                ]
+              },
+              {
+                "required": [
+                  "deviceDisappeared"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "DEVICE_APPEARED"
+            }
+          },
+          "required": [
+            "deviceAppeared"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "observation"
+                ]
+              },
+              {
+                "required": [
+                  "semanticEvent"
+                ]
+              },
+              {
+                "required": [
+                  "availability"
+                ]
+              },
+              {
+                "required": [
+                  "commandUpdate"
+                ]
+              },
+              {
+                "required": [
+                  "deviceDisappeared"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "DEVICE_DISAPPEARED"
+            }
+          },
+          "required": [
+            "deviceDisappeared"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "observation"
+                ]
+              },
+              {
+                "required": [
+                  "semanticEvent"
+                ]
+              },
+              {
+                "required": [
+                  "availability"
+                ]
+              },
+              {
+                "required": [
+                  "commandUpdate"
+                ]
+              },
+              {
+                "required": [
+                  "deviceAppeared"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "DispatchRequest": {
+      "type": "object",
+      "description": "Core → adapter. Parâmetros JÁ validados e convertidos para a unidade canônica.",
+      "required": [
+        "commandId",
+        "deviceNativeId",
+        "action",
+        "parameters",
+        "criticality",
+        "timeoutMs",
+        "traceId"
+      ],
+      "properties": {
+        "commandId": {
+          "type": "string"
+        },
+        "deviceNativeId": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "parameters": {
+          "type": "object"
+        },
+        "criticality": {
+          "enum": [
+            "COSMETIC",
+            "NORMAL",
+            "CRITICAL"
+          ]
+        },
+        "durable": {
+          "type": "boolean",
+          "default": false
+        },
+        "timeoutMs": {
+          "type": "integer"
+        },
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "traceId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "DispatchResult": {
+      "type": "object",
+      "description": "Resposta SÍNCRONA do adapter. ACCEPTED significa apenas 'assumi a responsabilidade de entregar' — NUNCA 'o dispositivo fez'. A confirmação vem depois por InboundMessage/commandUpdate. Essa separação estava certa na v0.1 e foi preservada.",
+      "required": [
+        "commandId",
+        "dispatchStatus"
+      ],
+      "properties": {
+        "commandId": {
+          "type": "string"
+        },
+        "dispatchStatus": {
+          "enum": [
+            "ACCEPTED",
+            "REJECTED"
+          ]
+        },
+        "adapterMessageId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "$ref": "#/$defs/AdapterError"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "dispatchStatus": {
+                "const": "REJECTED"
+              }
+            },
+            "required": [
+              "dispatchStatus"
+            ]
+          },
+          "then": {
+            "required": [
+              "error"
+            ]
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "AdapterError": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Erro precisa de schema tanto quanto sucesso — e a UI vai ler isto com mais frequência do que se imagina.",
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "DEVICE_UNREACHABLE",
+            "DEVICE_REJECTED",
+            "UNSUPPORTED_ACTION",
+            "INVALID_PARAMETER",
+            "ADAPTER_UNAVAILABLE",
+            "TRANSPORT_ERROR",
+            "RATE_LIMITED",
+            "NOT_AUTHORIZED",
+            "INTERNAL_ERROR"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean",
+          "default": false
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "descriptor",
+    "lifecycle",
+    "health"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 2
+    },
+    "descriptor": {
+      "$ref": "#/$defs/AdapterDescriptor"
+    },
+    "lifecycle": {
+      "$ref": "#/$defs/AdapterLifecycle"
+    },
+    "health": {
+      "$ref": "#/$defs/AdapterHealth"
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schemaVersion": 2,
+      "descriptor": {
+        "instanceId": "mqtt.home",
+        "adapterType": "mqtt",
+        "name": "MQTT Apartamento",
+        "contractVersion": 2,
+        "implementationVersion": "0.2.0",
+        "features": [
+          "DISCOVERY",
+          "READ",
+          "EXECUTE",
+          "SUBSCRIBE",
+          "HEALTH"
+        ],
+        "origin": "CORE"
+      },
+      "lifecycle": {
+        "status": "RUNNING",
+        "since": "2026-08-22T18:00:00-03:00",
+        "failureReason": null
+      },
+      "health": {
+        "status": "UNHEALTHY",
+        "checkedAt": "2026-08-22T23:32:00-03:00",
+        "summary": "Broker inacessível há 42s",
+        "details": {
+          "brokerConnected": false,
+          "lastMessageAt": "2026-08-22T23:31:18-03:00",
+          "reconnectAttempts": 7
+        }
+      }
+    }
+  ],
+  "messageExamples": {
+    "$comment": "Não faz parte do schema do documento acima — exemplos das mensagens trocadas em runtime, validadas contra os $defs correspondentes.",
+    "inboundObservation": {
+      "adapterInstanceId": "mqtt.home",
+      "at": "2026-08-22T23:30:01-03:00",
+      "kind": "OBSERVATION",
+      "observation": {
+        "deviceNativeId": "zigbee2mqtt/sensor_cozinha",
+        "propertyKey": "ambient_temperature",
+        "value": 24.3,
+        "unit": "CELSIUS",
+        "observedAt": "2026-08-22T23:30:00-03:00",
+        "confidence": "CONFIRMED"
+      }
+    },
+    "inboundAvailability": {
+      "adapterInstanceId": "mqtt.home",
+      "at": "2026-08-22T23:33:10-03:00",
+      "kind": "AVAILABILITY",
+      "availability": {
+        "deviceNativeId": "zigbee2mqtt/sensor_cozinha",
+        "available": false,
+        "reason": "LWT recebido"
+      }
+    },
+    "inboundCommandUpdate": {
+      "adapterInstanceId": "mqtt.chacara",
+      "at": "2026-08-23T05:40:04-03:00",
+      "kind": "COMMAND_UPDATE",
+      "commandUpdate": {
+        "commandId": "cmd_0PV7A692G7JKWTH7CGK8K7PJ5D",
+        "status": "COMPLETED",
+        "at": "2026-08-23T05:40:03-03:00"
+      }
+    },
+    "dispatchRequest": {
+      "commandId": "cmd_0PV7A692G7JKWTH7CGK8K7PJ5D",
+      "deviceNativeId": "esphome/bomba_poco/relay",
+      "action": "start_pumping",
+      "parameters": {
+        "duration": 600
+      },
+      "criticality": "CRITICAL",
+      "durable": true,
+      "timeoutMs": 5000,
+      "idempotencyKey": "irrigacao_horta_2026-08-23_manha",
+      "traceId": "trace_01JQSOLOSECO00000000001A"
+    },
+    "dispatchAccepted": {
+      "commandId": "cmd_0PV7A692G7JKWTH7CGK8K7PJ5D",
+      "dispatchStatus": "ACCEPTED",
+      "adapterMessageId": "mqtt-98342",
+      "error": null
+    },
+    "dispatchRejected": {
+      "commandId": "cmd_0N2509EPBQJWQMZY7S9KP5QBW3",
+      "dispatchStatus": "REJECTED",
+      "adapterMessageId": null,
+      "error": {
+        "code": "DEVICE_UNREACHABLE",
+        "message": "Sem resposta de esphome/bomba_poco há 120s",
+        "retryable": true,
+        "details": {
+          "lastSeenAt": "2026-08-23T05:28:00-03:00"
+        }
+      }
+    },
+    "discovery": {
+      "nativeId": "zigbee2mqtt/sensor_cozinha",
+      "suggestedName": "Sensor da cozinha",
+      "deviceClass": "SENSOR",
+      "metadata": {
+        "manufacturer": "Generic",
+        "model": "Zigbee Temperature Sensor"
+      },
+      "properties": [
+        {
+          "key": "ambient_temperature",
+          "name": "Temperatura",
+          "semanticType": "temperature",
+          "valueType": "DECIMAL",
+          "unit": "CELSIUS",
+          "valueDomain": {
+            "min": -40,
+            "max": 85
+          },
+          "readOnly": true,
+          "freshnessPolicy": {
+            "mode": "PERIODIC",
+            "expectedIntervalSeconds": 300,
+            "staleAfterSeconds": 900
+          }
+        },
+        {
+          "key": "humidity",
+          "name": "Umidade",
+          "semanticType": "humidity",
+          "valueType": "DECIMAL",
+          "unit": "PERCENT",
+          "valueDomain": {
+            "min": 0,
+            "max": 100
+          },
+          "readOnly": true,
+          "freshnessPolicy": {
+            "mode": "PERIODIC",
+            "expectedIntervalSeconds": 300,
+            "staleAfterSeconds": 900
+          }
+        },
+        {
+          "key": "battery_level",
+          "name": "Bateria",
+          "semanticType": "battery_level",
+          "valueType": "INTEGER",
+          "unit": "PERCENT",
+          "valueDomain": {
+            "min": 0,
+            "max": 100
+          },
+          "readOnly": true,
+          "freshnessPolicy": {
+            "mode": "PERIODIC",
+            "expectedIntervalSeconds": 3600,
+            "staleAfterSeconds": 21600
+          }
+        }
+      ],
+      "actions": [],
+      "events": []
+    },
+    "inboundDeviceAppeared": {
+      "adapterInstanceId": "mqtt.home",
+      "at": "2026-08-23T00:02:10-03:00",
+      "kind": "DEVICE_APPEARED",
+      "deviceAppeared": {
+        "nativeId": "zigbee2mqtt/sensor_novo",
+        "suggestedName": "Sensor novo",
+        "deviceClass": "SENSOR",
+        "metadata": {
+          "manufacturer": "Generic",
+          "model": "Temp/Humidity"
+        },
+        "properties": [
+          {
+            "key": "ambient_temperature",
+            "name": "Temperatura ambiente",
+            "semanticType": "temperature",
+            "valueType": "DECIMAL",
+            "unit": "CELSIUS",
+            "valueDomain": {
+              "min": -40,
+              "max": 85
+            },
+            "readOnly": true,
+            "freshnessPolicy": {
+              "mode": "PERIODIC",
+              "expectedIntervalSeconds": 300,
+              "staleAfterSeconds": 900
+            }
+          }
+        ],
+        "actions": [],
+        "events": []
+      }
+    },
+    "inboundDeviceDisappeared": {
+      "adapterInstanceId": "mqtt.home",
+      "at": "2026-08-23T00:05:00-03:00",
+      "kind": "DEVICE_DISAPPEARED",
+      "deviceDisappeared": {
+        "deviceNativeId": "zigbee2mqtt/sensor_novo",
+        "reason": "REMOVED_FROM_BRIDGE"
+      }
+    }
+  },
+  "exampleNotes": [
+    "O estado que a v0.1 não conseguia representar: adapter rodando, broker caído."
+  ]
+}

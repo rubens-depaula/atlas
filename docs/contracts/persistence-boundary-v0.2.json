@@ -1,0 +1,186 @@
+{
+  "$comment": "ATLAS — Fronteira de persistência. NÃO é JSON Schema: é POLÍTICA. Declara o que sobrevive a um restart, o que é recalculado, o que morre, e onde segredo vive. MUDANÇAS v0.1→v0.2: (1) séries temporais passaram a existir (property_history e event eram os itens de maior volume do sistema e não apareciam em lista nenhuma); (2) 'secret' deixou de ser taxonomia e virou fronteira, com lugar e proibições; (3) reconciliação de comando deixou de ser um booleano e virou algoritmo condicionado à criticidade; (4) 'future_*' saiu de 'durable' para 'planned', para a lista durável voltar a ser verdadeira. AJUSTE FINAL: storage, retenção e otimizações de série temporal permanecem deliberadamente TBD até haver dados reais de uso; nenhum número de capacidade vira regra arquitetural antes do MVP medir carga.",
+  "schemaVersion": 2,
+  "durable": {
+    "$comment": "Sobrevive a restart. Fonte da verdade.",
+    "model": [
+      "environment",
+      "location",
+      "device",
+      "property_descriptor",
+      "action_descriptor",
+      "semantic_event_descriptor",
+      "automation"
+    ],
+    "state": [
+      "property_last_known_state"
+    ],
+    "history": [
+      "property_history",
+      "event",
+      "command",
+      "command_status_history"
+    ],
+    "configuration": [
+      "adapter_descriptor",
+      "adapter_non_sensitive_configuration",
+      "vocabulary_extensions"
+    ]
+  },
+  "timeSeries": {
+    "$comment": "Os itens de maior volume do sistema inteiro. A §2 do briefing nomeia isto explicitamente ('dados da chácara durante meses → séries temporais'). Não é preciso decidir o banco agora, mas a política precisa EXISTIR, senão a decisão vira retrofit de storage.",
+    "property_history": {
+      "estimatedVolume": "EXEMPLO DE CARGA, não requisito: 50 properties a cada 5s ≈ 864k pontos/dia. Medir no MVP.",
+      "storage": "TBD — começar simples no MVP e decidir a partir do volume medido.",
+      "retention": {
+        "raw": "TBD",
+        "hourlyAggregate": "TBD",
+        "dailyAggregate": "TBD"
+      },
+      "aggregates": [
+        "min",
+        "max",
+        "avg",
+        "count",
+        "last"
+      ],
+      "writePolicy": "MVP: persistir observações confirmadas conforme a política implementada. Otimização por deadband só pode existir depois que deadband virar conceito explícito do PropertyDescriptor; até lá, não é parte deste contrato."
+    },
+    "event": {
+      "estimatedVolume": "alto — todo property.changed gera evento",
+      "retention": {
+        "raw": "TBD",
+        "afterRaw": "TBD — definir depois de medir volume e necessidades de auditoria."
+      },
+      "immutable": true,
+      "note": "Evento nunca é atualizado nem apagado individualmente. Expurgo é sempre por janela temporal, nunca seletivo por conteúdo."
+    },
+    "command": {
+      "retention": {
+        "raw": "TBD",
+        "criticalCommands": "TBD — nunca expurgar comando CRITICAL sem uma política explícita de segurança e auditoria."
+      },
+      "note": "Retenção de comandos CRITICAL exige decisão explícita de segurança; não há prazo constitucional na v0.2."
+    }
+  },
+  "derived": {
+    "$comment": "Recalculado no boot. Nunca é fonte da verdade, nunca é persistido como se fosse.",
+    "items": [
+      "property_freshness",
+      "device_availability_rollup",
+      "location_tree_closure",
+      "device_adapter_lookup",
+      "runtime_indexes",
+      "automation_dependency_graph"
+    ]
+  },
+  "ephemeral": {
+    "$comment": "Morre com o processo. Nada aqui pode ser assumido no boot.",
+    "items": [
+      "adapter_connection",
+      "socket",
+      "subscription_handle",
+      "event_loop_queue",
+      "in_flight_dispatch",
+      "thread",
+      "lock",
+      "runtime_cache",
+      "current_adapter_health",
+      "current_adapter_lifecycle",
+      "loop_guard_counters"
+    ]
+  },
+  "secret": {
+    "$comment": "Fronteira, não taxonomia. A v0.1 listava os TIPOS de segredo sem dizer onde vivem.",
+    "kinds": [
+      "password",
+      "api_token",
+      "oauth_token",
+      "private_key",
+      "mqtt_credential",
+      "adapter_credential",
+      "session_signing_key"
+    ],
+    "storage": {
+      "location": "Store dedicado, separado da configuração — nunca na mesma tabela nem no mesmo arquivo YAML.",
+      "encryptionAtRest": "AES-256-GCM",
+      "masterKeySource": "Variável de ambiente ou arquivo com permissão 0600 fora do diretório da aplicação. NUNCA no repositório, nunca no backup de configuração.",
+      "mvpAcceptable": "No MVP, arquivo cifrado local é suficiente. O que não é aceitável em nenhuma fase é texto plano junto da configuração."
+    },
+    "prohibitions": [
+      "NUNCA em log, em nenhum nível — inclusive DEBUG.",
+      "NUNCA em evento, em payload, em detail de statusHistory ou em AdapterError.details.",
+      "NUNCA no mesmo store da configuração não-sensível.",
+      "NUNCA em exceção propagada para a API ou para a UI.",
+      "NUNCA em export, dump de diagnóstico ou backup não cifrado."
+    ],
+    "redaction": "Todo objeto que possa conter segredo implementa mascaramento no toString(). Em Java: nunca usar record com campo de segredo sem sobrescrever toString()."
+  },
+  "planned": {
+    "$comment": "Ainda não existe. Listado para reservar o lugar, fora de 'durable' para que a lista durável continue verdadeira.",
+    "items": [
+      "user",
+      "account",
+      "occupant",
+      "permission",
+      "notification_channel",
+      "dashboard_layout"
+    ]
+  },
+  "restartPolicy": {
+    "preserveDeviceIdentity": true,
+    "preservePropertyDescriptors": true,
+    "preserveLastKnownState": true,
+    "preserveHistory": true,
+    "preserveEvents": true,
+    "preserveCommands": true,
+    "recalculateFreshness": true,
+    "resetRuntimeAvailabilityToUnknown": {
+      "value": true,
+      "rationale": "Depois de um restart você genuinamente não sabe se o dispositivo está lá. Assumir AVAILABLE é mentir para as automações; assumir UNAVAILABLE é desligar a casa. UNKNOWN é a única resposta honesta — e automações devem tratar UNKNOWN como condição não satisfeita, nunca como falso."
+    },
+    "revokeAssumedStates": {
+      "value": true,
+      "rationale": "Estado com confidence=ASSUMED vem de um comando que pode nunca ter sido confirmado. No boot ele volta para UNKNOWN em vez de virar verdade por esquecimento."
+    },
+    "restartAdapters": true,
+    "rebuildRuntimeCaches": true,
+    "resetLoopGuardCounters": true,
+    "commandReconciliation": {
+      "$comment": "A operação mais difícil do sistema. Na v0.1 era um booleano. Restart com comando em SENT: o dispositivo recebeu ou não? Não dá para saber — então a resposta é condicional à criticidade.",
+      "blindRetry": {
+        "value": false,
+        "rationale": "Nunca, em nenhuma criticidade. Reenviar cegamente pode ligar uma bomba duas vezes."
+      },
+      "byCriticality": {
+        "COSMETIC": {
+          "action": "READ_CURRENT_STATE_AND_CLOSE",
+          "detail": "Lê o estado atual do device pelo adapter e fecha o comando como CONFIRMED ou FAILED conforme o que encontrar. Sem intervenção humana."
+        },
+        "NORMAL": {
+          "action": "READ_CURRENT_STATE_THEN_MARK",
+          "detail": "Tenta ler o estado. Se o adapter responder, fecha. Se não responder em 30s, marca UNKNOWN_OUTCOME e emite evento de alerta."
+        },
+        "CRITICAL": {
+          "action": "MARK_UNKNOWN_AND_REQUIRE_EXPLICIT_RESOLUTION",
+          "detail": "Marca UNKNOWN_OUTCOME imediatamente, emite command.unknown_outcome, e NUNCA reenvia nem infere. Exige resolução explícita — humana ou por leitura confirmada do estado físico. Para action durável, adicionalmente: se o dispositivo suporta deadman, ele já se desligou sozinho; se não suporta, o alerta é de prioridade máxima."
+        }
+      },
+      "durableCommandOverrun": {
+        "detail": "Comando durável cujo expectedCompletionAt já passou e que não chegou a COMPLETED é overrun. Emitir alerta e, se cancelAction existir, despachar o cancelamento. É o caso da bomba que ficou ligada."
+      }
+    }
+  },
+  "schemaMigration": {
+    "$comment": "Quando schemaVersion virar 3, haverá anos de dados na versão 2. Decidir ANTES de gravar o primeiro evento.",
+    "event": {
+      "strategy": "MIGRATE_ON_READ",
+      "rationale": "Evento é imutável e de altíssimo volume. Reescrever milhões de linhas para mudar um campo é inaceitável. O leitor faz upcast da versão antiga para a corrente."
+    },
+    "model": {
+      "strategy": "MIGRATE_IN_PLACE",
+      "rationale": "Device, property_descriptor e location são poucos e mutáveis por natureza. Migração no boot, versionada, com backup automático antes."
+    },
+    "rule": "Toda mudança de schemaVersion exige um upcaster registrado ANTES do merge. Sem upcaster, o boot falha explicitamente em vez de ler dado errado em silêncio."
+  }
+}

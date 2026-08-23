@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.atlas.local/v0.2/environment.json",
+  "title": "ATLAS Environment e Location",
+  "description": "ARQUIVO NOVO na v0.2. environmentId e locationId eram referenciados por device e nunca definidos em lugar nenhum — e a árvore recursiva de localizações da §5 do briefing (Chácara → Casa → Cozinha) não tinha representação. A hierarquia é o único ponto do modelo em que o ATLAS é estruturalmente mais expressivo que o Home Assistant, cujas áreas têm profundidade fixa.",
+  "$comment": "MVP: um único Environment por instalação (§17 do briefing). O campo existe desde já para que a federação futura não exija migração — mas nada de sincronização entre nodes pertence a esta versão.",
+  "$defs": {
+    "Environment": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "id",
+        "name",
+        "timezone",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 2
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^env_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "timezone": {
+          "type": "string",
+          "description": "IANA, ex.: 'America/Sao_Paulo'. OBRIGATÓRIO: automações com horário, nascer e pôr do sol dependem disto, e o fuso do host não é confiável."
+        },
+        "coordinates": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Necessário para nascer/pôr do sol. Não é telemetria — nunca sai da instalação.",
+          "required": [
+            "latitude",
+            "longitude"
+          ],
+          "properties": {
+            "latitude": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            },
+            "longitude": {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            },
+            "elevationMeters": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Location": {
+      "type": "object",
+      "description": "Árvore recursiva por parentId. A profundidade é determinada pelo ambiente real; o contrato não impõe um máximo semântico fixo.",
+      "required": [
+        "schemaVersion",
+        "id",
+        "environmentId",
+        "name",
+        "parentId",
+        "kind",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 2
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^loc_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "environmentId": {
+          "type": "string",
+          "pattern": "^env_"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "parentId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^loc_",
+          "description": "null = raiz do Environment. INVARIANTES: sem ciclos e parent no mesmo environmentId. Implementações podem adotar um guard operacional configurável contra estruturas acidentalmente patológicas, mas esse limite não faz parte do domínio."
+        },
+        "kind": {
+          "enum": [
+            "SITE",
+            "BUILDING",
+            "FLOOR",
+            "ROOM",
+            "AREA",
+            "ZONE",
+            "SECTOR",
+            "OTHER"
+          ],
+          "description": "Classificação frouxa, para UI e agrupamento. Não tem semântica de comportamento — SECTOR serve a setor de irrigação, ZONE a zona de segurança."
+        },
+        "outdoor": {
+          "type": "boolean",
+          "default": false,
+          "description": "Externo. Muda o que é razoável esperar de temperatura, luminosidade e chuva."
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "required": [
+    "environment",
+    "locations"
+  ],
+  "properties": {
+    "environment": {
+      "$ref": "#/$defs/Environment"
+    },
+    "locations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Location"
+      }
+    }
+  },
+  "examples": [
+    {
+      "environment": {
+        "schemaVersion": 2,
+        "id": "env_0B2RTAWW9DNDSSF63B8M1Q9937",
+        "name": "Chácara",
+        "timezone": "America/Sao_Paulo",
+        "coordinates": {
+          "latitude": -22.9,
+          "longitude": -47.06,
+          "elevationMeters": 680
+        },
+        "notes": null,
+        "createdAt": "2026-08-21T09:00:00-03:00",
+        "updatedAt": "2026-08-21T09:00:00-03:00"
+      },
+      "locations": [
+        {
+          "schemaVersion": 2,
+          "id": "loc_07MC5SJ0GXQ6EZN2SZEF665875",
+          "environmentId": "env_0B2RTAWW9DNDSSF63B8M1Q9937",
+          "name": "Chácara",
+          "parentId": null,
+          "kind": "SITE",
+          "outdoor": true,
+          "notes": null,
+          "createdAt": "2026-08-21T09:00:00-03:00",
+          "updatedAt": "2026-08-21T09:00:00-03:00"
+        },
+        {
+          "schemaVersion": 2,
+          "id": "loc_075J73BJ06KFCGN9MNZ8HNMPT5",
+          "environmentId": "env_0B2RTAWW9DNDSSF63B8M1Q9937",
+          "name": "Casa",
+          "parentId": "loc_07MC5SJ0GXQ6EZN2SZEF665875",
+          "kind": "BUILDING",
+          "outdoor": false,
+          "notes": null,
+          "createdAt": "2026-08-21T09:00:00-03:00",
+          "updatedAt": "2026-08-21T09:00:00-03:00"
+        },
+        {
+          "schemaVersion": 2,
+          "id": "loc_0E4AF5E74E4VXG8XHDW288R2NF",
+          "environmentId": "env_0B2RTAWW9DNDSSF63B8M1Q9937",
+          "name": "Cozinha",
+          "parentId": "loc_075J73BJ06KFCGN9MNZ8HNMPT5",
+          "kind": "ROOM",
+          "outdoor": false,
+          "notes": null,
+          "createdAt": "2026-08-21T09:00:00-03:00",
+          "updatedAt": "2026-08-21T09:00:00-03:00"
+        },
+        {
+          "schemaVersion": 2,
+          "id": "loc_04X8NYXT4KQYSWAG24Y44XN10B",
+          "environmentId": "env_0B2RTAWW9DNDSSF63B8M1Q9937",
+          "name": "Pomar",
+          "parentId": "loc_07MC5SJ0GXQ6EZN2SZEF665875",
+          "kind": "AREA",
+          "outdoor": true,
+          "notes": null,
+          "createdAt": "2026-08-21T09:00:00-03:00",
+          "updatedAt": "2026-08-21T09:00:00-03:00"
+        },
+        {
+          "schemaVersion": 2,
+          "id": "loc_0BYD5PPB4ARJVQ8DP5PEWM9272",
+          "environmentId": "env_0B2RTAWW9DNDSSF63B8M1Q9937",
+          "name": "Horta",
+          "parentId": "loc_07MC5SJ0GXQ6EZN2SZEF665875",
+          "kind": "AREA",
+          "outdoor": true,
+          "notes": null,
+          "createdAt": "2026-08-21T09:00:00-03:00",
+          "updatedAt": "2026-08-21T09:00:00-03:00"
+        },
+        {
+          "schemaVersion": 2,
+          "id": "loc_0VH8G6WEKXEAR0T2TMA48QN0MT",
+          "environmentId": "env_0B2RTAWW9DNDSSF63B8M1Q9937",
+          "name": "Setor de irrigação 3",
+          "parentId": "loc_0BYD5PPB4ARJVQ8DP5PEWM9272",
+          "kind": "SECTOR",
+          "outdoor": true,
+          "notes": "Canteiro leste",
+          "createdAt": "2026-08-21T09:00:00-03:00",
+          "updatedAt": "2026-08-21T09:00:00-03:00"
+        },
+        {
+          "schemaVersion": 2,
+          "id": "loc_0EEX2HJ553FCCJQQAWTQPP65W2",
+          "environmentId": "env_0B2RTAWW9DNDSSF63B8M1Q9937",
+          "name": "Poço",
+          "parentId": "loc_07MC5SJ0GXQ6EZN2SZEF665875",
+          "kind": "ZONE",
+          "outdoor": true,
+          "notes": null,
+          "createdAt": "2026-08-21T09:00:00-03:00",
+          "updatedAt": "2026-08-21T09:00:00-03:00"
+        }
+      ]
+    }
+  ],
+  "exampleNotes": [
+    "A chácara do briefing, com a hierarquia real que motivou o modelo."
+  ]
+}
