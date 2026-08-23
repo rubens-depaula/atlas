@@ -1,0 +1,28 @@
+package com.atlas.property;
+
+public enum SemanticType {
+    TEMPERATURE,
+    HUMIDITY,
+    PRESSURE,
+    ILLUMINANCE,
+    CO2,
+    PRESENCE,
+    MOTION,
+    CONTACT,
+    LOCK_STATE,
+    POWER_STATE,
+    BRIGHTNESS,
+    COLOR_TEMPERATURE,
+    POSITION,
+    POWER,
+    ENERGY,
+    VOLTAGE,
+    CURRENT,
+    WATER_FLOW,
+    WATER_LEVEL,
+    SOIL_MOISTURE,
+    RAINFALL,
+    WIND_SPEED,
+    BATTERY_LEVEL,
+    SIGNAL_STRENGTH
+}
