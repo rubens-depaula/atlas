@@ -1,8 +1,11 @@
 package com.atlas.device;
 
+import java.time.OffsetDateTime;
+
 public record DeviceSource(
         String adapterInstanceId,
-        String nativeId
+        String nativeId,
+        OffsetDateTime boundAt
 ) {
 
     public DeviceSource {

@@ -1,5 +1,6 @@
 package com.atlas.property;
 
+import com.atlas.action.ActionKey;
 import com.atlas.device.DeviceId;
 
 public record PropertyDescriptor(
@@ -11,7 +12,7 @@ public record PropertyDescriptor(
         Unit unit,
         ValueDomain valueDomain,
         boolean readOnly,
-        String writeAction,
+        ActionKey writeAction,
         FreshnessPolicy freshnessPolicy
 ) {
 
@@ -52,7 +53,7 @@ public record PropertyDescriptor(
             );
         }
 
-        if (!readOnly && (writeAction == null || writeAction.isBlank())) {
+        if (!readOnly && writeAction == null) {
             throw new IllegalArgumentException(
                     "writeAction is required when property is writable"
             );
