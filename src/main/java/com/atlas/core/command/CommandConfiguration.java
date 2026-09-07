@@ -1,5 +1,6 @@
 package com.atlas.core.command;
 
+import com.atlas.command.CommandRegistry;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -14,5 +15,10 @@ public class CommandConfiguration {
     @Bean
     public CommandIdGenerator commandIdGenerator() {
         return new CommandIdGenerator();
+    }
+
+    @Bean
+    public CommandRegistry commandRegistry() {
+        return new InMemoryCommandRegistry();
     }
 }

@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import com.atlas.command.CommandRegistry;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -36,15 +37,18 @@ public class DeviceActionController {
     private final DeviceRegistry deviceRegistry;
     private final ActionCommandService commandService;
     private final CommandIdGenerator commandIdGenerator;
+    private final CommandRegistry commandRegistry;
 
     public DeviceActionController(
             DeviceRegistry deviceRegistry,
             ActionCommandService commandService,
-            CommandIdGenerator commandIdGenerator
+            CommandIdGenerator commandIdGenerator,
+            CommandRegistry commandRegistry
     ) {
         this.deviceRegistry = deviceRegistry;
         this.commandService = commandService;
         this.commandIdGenerator = commandIdGenerator;
+        this.commandRegistry = commandRegistry;
     }
 
     @PostMapping("/{deviceId}/actions/{action}")
@@ -119,6 +123,8 @@ public class DeviceActionController {
                         Duration.ofSeconds(5),
                         now
                 );
+
+        commandRegistry.register(command);
 
         CommandResponse response =
                 CommandResponse.from(command);
