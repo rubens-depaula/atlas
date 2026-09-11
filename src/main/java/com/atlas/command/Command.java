@@ -227,7 +227,88 @@ public final class Command {
             );
         }
     }
+    public static Command rehydrate(
+            CommandId id,
+            CommandActor actor,
+            CommandOrigin origin,
+            CommandTarget target,
+            Map<String, Object> parameters,
+            Criticality criticality,
+            OffsetDateTime requestedAt,
+            Duration timeout,
+            CommandIdempotencyKey idempotencyKey,
+            CommandCausality causality,
+            List<CommandStatusEntry> statusHistory,
+            OffsetDateTime dispatchedAt,
+            OffsetDateTime executingSince,
+            OffsetDateTime expectedCompletionAt,
+            OffsetDateTime completedAt,
+            CommandResult result
+    ) {
+        if (statusHistory == null || statusHistory.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "statusHistory cannot be null or empty"
+            );
+        }
 
+        if (statusHistory.getFirst().status()
+                != CommandStatus.REQUESTED) {
+            throw new IllegalArgumentException(
+                    "statusHistory must start with REQUESTED"
+            );
+        }
+
+        OffsetDateTime previousAt = null;
+        boolean terminalSeen = false;
+
+        for (CommandStatusEntry entry : statusHistory) {
+            if (entry == null) {
+                throw new IllegalArgumentException(
+                        "statusHistory cannot contain null entries"
+                );
+            }
+
+            if (previousAt != null
+                    && entry.at().isBefore(previousAt)) {
+                throw new IllegalArgumentException(
+                        "statusHistory must be chronological"
+                );
+            }
+
+            if (terminalSeen) {
+                throw new IllegalArgumentException(
+                        "statusHistory cannot continue after a terminal status"
+                );
+            }
+
+            terminalSeen = entry.status().isTerminal();
+            previousAt = entry.at();
+        }
+
+        Command command = new Command(
+                id,
+                actor,
+                origin,
+                target,
+                parameters,
+                criticality,
+                requestedAt,
+                timeout,
+                idempotencyKey,
+                causality
+        );
+
+        command.statusHistory.clear();
+        command.statusHistory.addAll(statusHistory);
+
+        command.dispatchedAt = dispatchedAt;
+        command.executingSince = executingSince;
+        command.expectedCompletionAt = expectedCompletionAt;
+        command.completedAt = completedAt;
+        command.result = result;
+
+        return command;
+    }
     public CommandStatus status() {
         return statusHistory
                 .getLast()

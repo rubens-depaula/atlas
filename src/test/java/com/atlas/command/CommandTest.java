@@ -229,7 +229,124 @@ class CommandTest {
                 command.causality().cause().type()
         );
     }
+    @Test
+    void shouldRehydrateAcceptedCommand() {
+        Command original = command(
+                new CommandActor(
+                        CommandActorType.USER,
+                        "user_test"
+                ),
+                new CommandCausality(
+                        "trace_test",
+                        null,
+                        0
+                )
+        );
 
+        OffsetDateTime acceptedAt =
+                original.requestedAt()
+                        .plus(Duration.ofMillis(10));
+
+        original.accept(acceptedAt);
+
+        Command rehydrated = Command.rehydrate(
+                original.id(),
+                original.actor(),
+                original.origin(),
+                original.target(),
+                original.parameters(),
+                original.criticality(),
+                original.requestedAt(),
+                original.timeout(),
+                original.idempotencyKey(),
+                original.causality(),
+                original.statusHistory(),
+                original.dispatchedAt(),
+                original.executingSince(),
+                original.expectedCompletionAt(),
+                original.completedAt(),
+                original.result()
+        );
+
+        assertEquals(
+                CommandStatus.ACCEPTED,
+                rehydrated.status()
+        );
+
+        assertEquals(
+                original.statusHistory(),
+                rehydrated.statusHistory()
+        );
+
+        assertNull(rehydrated.result());
+        assertNull(rehydrated.completedAt());
+    }
+
+    @Test
+    void shouldRehydrateRejectedCommandWithResult() {
+        Command original = command(
+                new CommandActor(
+                        CommandActorType.USER,
+                        "user_test"
+                ),
+                new CommandCausality(
+                        "trace_test",
+                        null,
+                        0
+                )
+        );
+
+        OffsetDateTime rejectedAt =
+                original.requestedAt()
+                        .plus(Duration.ofMillis(10));
+
+        original.reject(
+                CommandErrorCode.INVALID_PARAMETER,
+                "invalid value",
+                rejectedAt
+        );
+
+        Command rehydrated = Command.rehydrate(
+                original.id(),
+                original.actor(),
+                original.origin(),
+                original.target(),
+                original.parameters(),
+                original.criticality(),
+                original.requestedAt(),
+                original.timeout(),
+                original.idempotencyKey(),
+                original.causality(),
+                original.statusHistory(),
+                original.dispatchedAt(),
+                original.executingSince(),
+                original.expectedCompletionAt(),
+                original.completedAt(),
+                original.result()
+        );
+
+        assertEquals(
+                CommandStatus.REJECTED,
+                rehydrated.status()
+        );
+
+        assertTrue(rehydrated.status().isTerminal());
+
+        assertEquals(
+                original.statusHistory(),
+                rehydrated.statusHistory()
+        );
+
+        assertEquals(
+                original.result(),
+                rehydrated.result()
+        );
+
+        assertEquals(
+                rejectedAt,
+                rehydrated.completedAt()
+        );
+    }
     private Command command(
             CommandActor actor,
             CommandCausality causality
