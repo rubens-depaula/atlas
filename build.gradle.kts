@@ -20,8 +20,9 @@ dependencies {
     runtimeOnly("org.postgresql:postgresql")
 
     // Database migrations
-    implementation("org.flywaydb:flyway-core")
-    runtimeOnly("org.flywaydb:flyway-database-postgresql")
+    // Database migrations
+implementation("org.springframework.boot:spring-boot-starter-flyway")
+runtimeOnly("org.flywaydb:flyway-database-postgresql")
 
     testImplementation(platform("org.junit:junit-bom:6.0.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
