@@ -34,7 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-public final class PostgresCommandRegistry
+public class PostgresCommandRegistry
         implements CommandRegistry {
 
     private static final TypeReference<Map<String, Object>>
