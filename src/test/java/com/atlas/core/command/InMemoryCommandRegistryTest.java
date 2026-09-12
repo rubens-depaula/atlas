@@ -9,6 +9,7 @@ import com.atlas.command.CommandId;
 import com.atlas.command.CommandIdempotencyKey;
 import com.atlas.command.CommandOrigin;
 import com.atlas.command.CommandOriginType;
+import com.atlas.command.CommandStatus;
 import com.atlas.command.CommandTarget;
 import com.atlas.device.Criticality;
 import com.atlas.device.DeviceId;
@@ -96,6 +97,63 @@ class InMemoryCommandRegistryTest {
         assertEquals(
                 2,
                 registry.findAll().size()
+        );
+    }
+
+    @Test
+    void shouldSaveRegisteredCommand() {
+
+        InMemoryCommandRegistry registry =
+                new InMemoryCommandRegistry();
+
+        String id =
+                "cmd_00000000000000000000000000";
+
+        Command original =
+                command(id);
+
+        registry.register(original);
+
+        Command updated =
+                command(id);
+
+        updated.accept(
+                updated.requestedAt()
+                        .plus(Duration.ofMillis(10))
+        );
+
+        registry.save(updated);
+
+        Command stored =
+                registry
+                        .findById(updated.id())
+                        .orElseThrow();
+
+        assertEquals(
+                CommandStatus.ACCEPTED,
+                stored.status()
+        );
+
+        assertEquals(
+                2,
+                stored.statusHistory().size()
+        );
+    }
+
+    @Test
+    void shouldRejectSaveForUnknownCommand() {
+
+        InMemoryCommandRegistry registry =
+                new InMemoryCommandRegistry();
+
+        Command command =
+                command(
+                        "cmd_00000000000000000000000000"
+                );
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> registry.save(command)
         );
     }
 

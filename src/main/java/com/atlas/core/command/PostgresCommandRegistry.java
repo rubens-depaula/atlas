@@ -30,9 +30,12 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+
 
 public class PostgresCommandRegistry
         implements CommandRegistry {
@@ -86,6 +89,29 @@ public class PostgresCommandRegistry
     }
 
     @Override
+    @Transactional
+    public void save(Command command) {
+
+        if (command == null) {
+            throw new IllegalArgumentException(
+                    "command cannot be null"
+            );
+        }
+
+        int updated =
+                updateCommand(command);
+
+        if (updated == 0) {
+            throw new IllegalStateException(
+                    "command not registered: "
+                            + command.id().value()
+            );
+        }
+
+        appendNewStatusHistory(command);
+    }
+
+    @Override
     public Optional<Command> findById(CommandId id) {
         if (id == null) {
             throw new IllegalArgumentException(
@@ -115,6 +141,147 @@ public class PostgresCommandRegistry
                 ORDER BY requested_at, id
                 """,
                 (rs, rowNum) -> mapCommand(rs)
+        );
+    }
+
+
+    private int updateCommand(Command command) {
+
+        CommandResult result =
+                command.result();
+
+        return jdbcTemplate.update(
+                """
+                UPDATE atlas_command
+                SET dispatched_at = ?,
+                    executing_since = ?,
+                    expected_completion_at = ?,
+                    completed_at = ?,
+                    result_outcome = ?,
+                    result_error_code = ?,
+                    result_error_message = ?,
+                    result_adapter_message_id = ?,
+                    result_at = ?
+                WHERE id = ?
+                """,
+                command.dispatchedAt(),
+                command.executingSince(),
+                command.expectedCompletionAt(),
+                command.completedAt(),
+                result == null
+                        ? null
+                        : result.outcome().name(),
+                result == null
+                        || result.errorCode() == null
+                        ? null
+                        : result.errorCode().name(),
+                result == null
+                        ? null
+                        : result.errorMessage(),
+                result == null
+                        ? null
+                        : result.adapterMessageId(),
+                result == null
+                        ? null
+                        : result.at(),
+                command.id().value()
+        );
+    }
+
+    private void appendNewStatusHistory(
+            Command command
+    ) {
+
+        List<CommandStatusEntry> persisted =
+                readStatusHistory(command.id());
+
+        List<CommandStatusEntry> current =
+                command.statusHistory();
+
+        if (current.size() < persisted.size()) {
+            throw new IllegalStateException(
+                    "command status history is older "
+                            + "than persisted history: "
+                            + command.id().value()
+            );
+        }
+
+        for (int sequence = 0;
+             sequence < persisted.size();
+             sequence++) {
+
+            if (!sameStatusEntry(
+                    persisted.get(sequence),
+                    current.get(sequence)
+            )) {
+                throw new IllegalStateException(
+                        "command status history diverged "
+                                + "at sequence "
+                                + sequence
+                                + ": "
+                                + command.id().value()
+                );
+            }
+        }
+
+        for (int sequence = persisted.size();
+             sequence < current.size();
+             sequence++) {
+
+            insertStatusHistoryEntry(
+                    command.id(),
+                    sequence,
+                    current.get(sequence)
+            );
+        }
+    }
+
+    private boolean sameStatusEntry(
+            CommandStatusEntry first,
+            CommandStatusEntry second
+    ) {
+
+        return first.status() == second.status()
+                && first.at()
+                .toInstant()
+                .truncatedTo(
+                        ChronoUnit.MICROS
+                )
+                .equals(
+                        second.at()
+                                .toInstant()
+                                .truncatedTo(
+                                        ChronoUnit.MICROS
+                                )
+                )
+                && Objects.equals(
+                        first.detail(),
+                        second.detail()
+                );
+    }
+
+    private void insertStatusHistoryEntry(
+            CommandId commandId,
+            int sequence,
+            CommandStatusEntry entry
+    ) {
+
+        jdbcTemplate.update(
+                """
+                INSERT INTO atlas_command_status_history (
+                    command_id,
+                    sequence_no,
+                    status,
+                    at,
+                    detail
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                commandId.value(),
+                sequence,
+                entry.status().name(),
+                entry.at(),
+                entry.detail()
         );
     }
 
@@ -212,7 +379,9 @@ public class PostgresCommandRegistry
         );
     }
 
+
     private void insertStatusHistory(Command command) {
+
         List<CommandStatusEntry> history =
                 command.statusHistory();
 
@@ -220,25 +389,10 @@ public class PostgresCommandRegistry
              sequence < history.size();
              sequence++) {
 
-            CommandStatusEntry entry =
-                    history.get(sequence);
-
-            jdbcTemplate.update(
-                    """
-                    INSERT INTO atlas_command_status_history (
-                        command_id,
-                        sequence_no,
-                        status,
-                        at,
-                        detail
-                    )
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    command.id().value(),
+            insertStatusHistoryEntry(
+                    command.id(),
                     sequence,
-                    entry.status().name(),
-                    entry.at(),
-                    entry.detail()
+                    history.get(sequence)
             );
         }
     }

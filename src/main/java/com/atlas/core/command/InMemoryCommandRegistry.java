@@ -40,6 +40,29 @@ public final class InMemoryCommandRegistry
     }
 
     @Override
+    public void save(Command command) {
+
+        if (command == null) {
+            throw new IllegalArgumentException(
+                    "command cannot be null"
+            );
+        }
+
+        Command previous =
+                commands.replace(
+                        command.id(),
+                        command
+                );
+
+        if (previous == null) {
+            throw new IllegalStateException(
+                    "command not registered: "
+                            + command.id().value()
+            );
+        }
+    }
+
+    @Override
     public Optional<Command> findById(
             CommandId id
     ) {
