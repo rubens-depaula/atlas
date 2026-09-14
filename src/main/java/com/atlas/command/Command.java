@@ -445,6 +445,19 @@ public final class Command {
             );
         }
 
+                if (!isAllowedTransition(
+                last.status(),
+                nextStatus
+        )) {
+            throw new IllegalStateException(
+                    "transition from "
+                            + last.status()
+                            + " to "
+                            + nextStatus
+                            + " is not allowed"
+            );
+        }
+
         if (last.status().isTerminal()) {
             throw new IllegalStateException(
                     "terminal command cannot change status"
@@ -459,6 +472,55 @@ public final class Command {
                 )
         );
     }
+        private static boolean isAllowedTransition(
+            CommandStatus from,
+            CommandStatus to
+    ) {
+        return switch (from) {
+
+            case REQUESTED ->
+                    to == CommandStatus.ACCEPTED
+                            || to == CommandStatus.REJECTED
+                            || to == CommandStatus.CANCELLED
+                            || to == CommandStatus.EXPIRED;
+
+            case ACCEPTED ->
+                    to == CommandStatus.SENT
+                            || to == CommandStatus.FAILED
+                            || to == CommandStatus.TIMEOUT
+                            || to == CommandStatus.CANCELLED
+                            || to == CommandStatus.EXPIRED;
+
+            case SENT ->
+                    to == CommandStatus.ACKNOWLEDGED
+                            || to == CommandStatus.FAILED
+                            || to == CommandStatus.TIMEOUT
+                            || to == CommandStatus.UNKNOWN_OUTCOME;
+
+            case ACKNOWLEDGED ->
+                    to == CommandStatus.EXECUTING
+                            || to == CommandStatus.FAILED
+                            || to == CommandStatus.TIMEOUT
+                            || to == CommandStatus.UNKNOWN_OUTCOME;
+
+            case EXECUTING ->
+                    to == CommandStatus.CONFIRMED
+                            || to == CommandStatus.COMPLETED
+                            || to == CommandStatus.FAILED
+                            || to == CommandStatus.TIMEOUT
+                            || to == CommandStatus.UNKNOWN_OUTCOME;
+
+            case CONFIRMED,
+                 COMPLETED,
+                 REJECTED,
+                 FAILED,
+                 TIMEOUT,
+                 CANCELLED,
+                 EXPIRED,
+                 UNKNOWN_OUTCOME -> false;
+        };
+    }
+
     private void requireStatusOneOf(
             CommandStatus... expectedStatuses
     ) {
@@ -513,6 +575,11 @@ public final class Command {
                     "statusHistory cannot be null or empty"
             );
         }
+        if (statusHistory.getFirst() == null) {
+            throw new IllegalArgumentException(
+                    "statusHistory cannot contain null entries"
+            );
+        }
 
         if (statusHistory.getFirst().status()
                 != CommandStatus.REQUESTED) {
@@ -522,6 +589,7 @@ public final class Command {
         }
 
         OffsetDateTime previousAt = null;
+        CommandStatus previousStatus = null;
         boolean terminalSeen = false;
 
         for (CommandStatusEntry entry : statusHistory) {
@@ -537,6 +605,18 @@ public final class Command {
                         "statusHistory must be chronological"
                 );
             }
+	                if (previousStatus != null
+                    && !isAllowedTransition(
+                            previousStatus,
+                            entry.status()
+                    )) {
+                throw new IllegalArgumentException(
+                        "invalid status transition in history: "
+                                + previousStatus
+                                + " -> "
+                                + entry.status()
+                );
+            }
 
             if (terminalSeen) {
                 throw new IllegalArgumentException(
@@ -546,6 +626,8 @@ public final class Command {
 
             terminalSeen = entry.status().isTerminal();
             previousAt = entry.at();
+            previousStatus = entry.status();
+
         }
 
         Command command = new Command(

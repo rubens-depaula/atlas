@@ -1,5 +1,7 @@
 package com.atlas.command;
 
+import java.util.List;
+
 import com.atlas.action.ActionKey;
 import com.atlas.device.Criticality;
 import com.atlas.device.DeviceId;
@@ -1158,6 +1160,160 @@ class CommandTest {
 
         assertNull(
                 command.result()
+        );
+    }
+        @Test
+    void shouldRejectInvalidTransitionDuringRehydration() {
+
+        Command original = command(
+                new CommandActor(
+                        CommandActorType.USER,
+                        "user_test"
+                ),
+                new CommandCausality(
+                        "trace_test",
+                        null,
+                        0
+                )
+        );
+
+        OffsetDateTime executingAt =
+                original.requestedAt()
+                        .plus(Duration.ofMillis(10));
+
+        List<CommandStatusEntry> invalidHistory =
+                List.of(
+                        new CommandStatusEntry(
+                                CommandStatus.REQUESTED,
+                                original.requestedAt(),
+                                null
+                        ),
+                        new CommandStatusEntry(
+                                CommandStatus.EXECUTING,
+                                executingAt,
+                                null
+                        )
+                );
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Command.rehydrate(
+                        original.id(),
+                        original.actor(),
+                        original.origin(),
+                        original.target(),
+                        original.parameters(),
+                        original.criticality(),
+                        original.requestedAt(),
+                        original.timeout(),
+                        original.idempotencyKey(),
+                        original.causality(),
+                        invalidHistory,
+                        null,
+                        executingAt,
+                        null,
+                        null,
+                        null
+                )
+        );
+    }
+
+    @Test
+    void shouldRehydrateCompleteValidLifecycle() {
+
+        Command original = command(
+                new CommandActor(
+                        CommandActorType.USER,
+                        "user_test"
+                ),
+                new CommandCausality(
+                        "trace_test",
+                        null,
+                        0
+                )
+        );
+
+        OffsetDateTime acceptedAt =
+                original.requestedAt()
+                        .plus(Duration.ofMillis(10));
+
+        OffsetDateTime sentAt =
+                original.requestedAt()
+                        .plus(Duration.ofMillis(20));
+
+        OffsetDateTime acknowledgedAt =
+                original.requestedAt()
+                        .plus(Duration.ofMillis(30));
+
+        OffsetDateTime executingAt =
+                original.requestedAt()
+                        .plus(Duration.ofMillis(40));
+
+        OffsetDateTime completedAt =
+                original.requestedAt()
+                        .plus(Duration.ofMillis(50));
+
+        original.accept(acceptedAt);
+        original.markSent(sentAt);
+        original.acknowledge(acknowledgedAt);
+
+        original.startExecution(
+                executingAt,
+                null
+        );
+
+        original.complete(
+                "adapter_message_test",
+                completedAt
+        );
+
+        Command rehydrated = Command.rehydrate(
+                original.id(),
+                original.actor(),
+                original.origin(),
+                original.target(),
+                original.parameters(),
+                original.criticality(),
+                original.requestedAt(),
+                original.timeout(),
+                original.idempotencyKey(),
+                original.causality(),
+                original.statusHistory(),
+                original.dispatchedAt(),
+                original.executingSince(),
+                original.expectedCompletionAt(),
+                original.completedAt(),
+                original.result()
+        );
+
+        assertEquals(
+                CommandStatus.COMPLETED,
+                rehydrated.status()
+        );
+
+        assertEquals(
+                original.statusHistory(),
+                rehydrated.statusHistory()
+        );
+
+        assertEquals(
+                original.dispatchedAt(),
+                rehydrated.dispatchedAt()
+        );
+
+        assertEquals(
+                original.executingSince(),
+                rehydrated.executingSince()
+        );
+
+        assertEquals(
+                original.completedAt(),
+                rehydrated.completedAt()
+        );
+
+        assertEquals(
+                CommandOutcome.SUCCESS,
+                rehydrated.result().outcome()
         );
     }
 
