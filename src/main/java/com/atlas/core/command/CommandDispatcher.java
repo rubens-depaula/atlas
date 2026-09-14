@@ -118,8 +118,24 @@ public final class CommandDispatcher {
                         command.parameters()
                 );
 
-        AdapterDispatchReceipt receipt =
-                adapter.dispatch(adapterCommand);
+        AdapterDispatchReceipt receipt;
+
+        try {
+            receipt =
+                    adapter.dispatch(adapterCommand);
+
+        } catch (RuntimeException exception) {
+
+            command.markUnknownOutcome(
+                    "adapter dispatch failed: "
+                            + exception.getMessage(),
+                    null,
+                    sentAt
+            );
+
+            commandRegistry.save(command);
+            return;
+        }
 
         command.acknowledge(
                 receipt.acknowledgedAt()

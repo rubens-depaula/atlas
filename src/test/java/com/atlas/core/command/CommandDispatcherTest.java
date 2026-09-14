@@ -158,6 +158,102 @@ class CommandDispatcherTest {
                 persisted.status()
         );
     }
+        @Test
+    void shouldMarkUnknownOutcomeWhenAdapterFailsAfterDispatch() {
+
+        OffsetDateTime now =
+                OffsetDateTime.now();
+
+        Device device =
+                device(now);
+
+        InMemoryDeviceRegistry deviceRegistry =
+                new InMemoryDeviceRegistry();
+
+        deviceRegistry.register(device);
+
+        InMemoryCommandRegistry commandRegistry =
+                new InMemoryCommandRegistry();
+
+        Command command =
+                new ActionCommandService().submit(
+                        new CommandId(
+                                "cmd_00000000000000000000000000"
+                        ),
+                        device,
+                        new ActionKey("turn_on"),
+                        Map.of(),
+                        new CommandActor(
+                                CommandActorType.USER,
+                                "user_test"
+                        ),
+                        new CommandOrigin(
+                                CommandOriginType.API,
+                                "api_test"
+                        ),
+                        new CommandIdempotencyKey(
+                                "idem_test",
+                                Duration.ofSeconds(10)
+                        ),
+                        new CommandCausality(
+                                "trace_test",
+                                null,
+                                0
+                        ),
+                        Duration.ofSeconds(5),
+                        now
+                );
+
+        commandRegistry.register(command);
+
+        DeviceAdapter failingAdapter =
+                new DeviceAdapter() {
+
+                    @Override
+                    public String instanceId() {
+                        return "demo.adapter";
+                    }
+
+                    @Override
+                    public AdapterDispatchReceipt dispatch(
+                            AdapterCommand adapterCommand
+                    ) {
+                        throw new IllegalStateException(
+                                "simulated adapter failure"
+                        );
+                    }
+                };
+
+        AdapterRegistry adapterRegistry =
+                instanceId ->
+                        "demo.adapter".equals(instanceId)
+                                ? Optional.of(failingAdapter)
+                                : Optional.empty();
+
+        CommandDispatcher dispatcher =
+                new CommandDispatcher(
+                        deviceRegistry,
+                        commandRegistry,
+                        adapterRegistry
+                );
+
+        OffsetDateTime sentAt =
+                now.plus(Duration.ofMillis(10));
+
+        dispatcher.dispatch(
+                command,
+                sentAt
+        );
+
+        assertEquals(
+                CommandStatus.UNKNOWN_OUTCOME,
+                command.status()
+        );
+
+        assertNotNull(
+                command.result()
+        );
+    }
 
     private Device device(
             OffsetDateTime now
