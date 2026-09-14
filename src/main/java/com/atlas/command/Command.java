@@ -150,6 +150,251 @@ public final class Command {
         );
     }
 
+    public void markSent(
+            OffsetDateTime at
+    ) {
+        requireStatus(CommandStatus.ACCEPTED);
+
+        transitionTo(
+                CommandStatus.SENT,
+                at,
+                null
+        );
+
+        this.dispatchedAt = at;
+    }
+
+    public void acknowledge(
+            OffsetDateTime at
+    ) {
+        requireStatus(CommandStatus.SENT);
+
+        transitionTo(
+                CommandStatus.ACKNOWLEDGED,
+                at,
+                null
+        );
+    }
+
+    public void startExecution(
+            OffsetDateTime at,
+            OffsetDateTime expectedCompletionAt
+    ) {
+        requireStatus(
+                CommandStatus.ACKNOWLEDGED
+        );
+
+        if (expectedCompletionAt != null
+                && expectedCompletionAt.isBefore(at)) {
+            throw new IllegalArgumentException(
+                    "expectedCompletionAt cannot be before execution start"
+            );
+        }
+
+        transitionTo(
+                CommandStatus.EXECUTING,
+                at,
+                null
+        );
+
+        this.executingSince = at;
+        this.expectedCompletionAt =
+                expectedCompletionAt;
+    }
+
+    public void confirm(
+            String adapterMessageId,
+            OffsetDateTime at
+    ) {
+        requireStatus(
+                CommandStatus.EXECUTING
+        );
+
+        transitionTo(
+                CommandStatus.CONFIRMED,
+                at,
+                null
+        );
+
+        this.completedAt = at;
+
+        this.result = new CommandResult(
+                CommandOutcome.SUCCESS,
+                null,
+                null,
+                adapterMessageId,
+                at
+        );
+    }
+
+    public void complete(
+            String adapterMessageId,
+            OffsetDateTime at
+    ) {
+        requireStatus(
+                CommandStatus.EXECUTING
+        );
+
+        transitionTo(
+                CommandStatus.COMPLETED,
+                at,
+                null
+        );
+
+        this.completedAt = at;
+
+        this.result = new CommandResult(
+                CommandOutcome.SUCCESS,
+                null,
+                null,
+                adapterMessageId,
+                at
+        );
+    }
+
+    public void fail(
+            CommandErrorCode errorCode,
+            String message,
+            String adapterMessageId,
+            OffsetDateTime at
+    ) {
+        requireStatusOneOf(
+                CommandStatus.ACCEPTED,
+                CommandStatus.SENT,
+                CommandStatus.ACKNOWLEDGED,
+                CommandStatus.EXECUTING
+        );
+
+        if (errorCode == null) {
+            throw new IllegalArgumentException(
+                    "errorCode cannot be null"
+            );
+        }
+
+        transitionTo(
+                CommandStatus.FAILED,
+                at,
+                message
+        );
+
+        this.completedAt = at;
+
+        this.result = new CommandResult(
+                CommandOutcome.FAILURE,
+                errorCode,
+                message,
+                adapterMessageId,
+                at
+        );
+    }
+
+    public void timeout(
+            String message,
+            OffsetDateTime at
+    ) {
+        requireStatusOneOf(
+                CommandStatus.ACCEPTED,
+                CommandStatus.SENT,
+                CommandStatus.ACKNOWLEDGED,
+                CommandStatus.EXECUTING
+        );
+
+        transitionTo(
+                CommandStatus.TIMEOUT,
+                at,
+                message
+        );
+
+        this.completedAt = at;
+
+        this.result = new CommandResult(
+                CommandOutcome.UNKNOWN,
+                null,
+                message,
+                null,
+                at
+        );
+    }
+
+    public void markUnknownOutcome(
+            String message,
+            String adapterMessageId,
+            OffsetDateTime at
+    ) {
+        requireStatusOneOf(
+                CommandStatus.SENT,
+                CommandStatus.ACKNOWLEDGED,
+                CommandStatus.EXECUTING
+        );
+
+        transitionTo(
+                CommandStatus.UNKNOWN_OUTCOME,
+                at,
+                message
+        );
+
+        this.completedAt = at;
+
+        this.result = new CommandResult(
+                CommandOutcome.UNKNOWN,
+                null,
+                message,
+                adapterMessageId,
+                at
+        );
+    }
+    public void cancel(
+            String message,
+            OffsetDateTime at
+    ) {
+        requireStatusOneOf(
+                CommandStatus.REQUESTED,
+                CommandStatus.ACCEPTED
+        );
+
+        transitionTo(
+                CommandStatus.CANCELLED,
+                at,
+                message
+        );
+
+        this.completedAt = at;
+
+        this.result = new CommandResult(
+                CommandOutcome.CANCELLED,
+                null,
+                message,
+                null,
+                at
+        );
+    }
+
+    public void expire(
+            String message,
+            OffsetDateTime at
+    ) {
+        requireStatusOneOf(
+                CommandStatus.REQUESTED,
+                CommandStatus.ACCEPTED
+        );
+
+        transitionTo(
+                CommandStatus.EXPIRED,
+                at,
+                message
+        );
+
+        this.completedAt = at;
+
+        this.result = new CommandResult(
+                CommandOutcome.CANCELLED,
+                null,
+                message,
+                null,
+                at
+        );
+    }
+
     public void reject(
             CommandErrorCode errorCode,
             String message,
@@ -212,6 +457,24 @@ public final class Command {
                         at,
                         detail
                 )
+        );
+    }
+    private void requireStatusOneOf(
+            CommandStatus... expectedStatuses
+    ) {
+        CommandStatus current =
+                status();
+
+        for (CommandStatus expected : expectedStatuses) {
+            if (current == expected) {
+                return;
+            }
+        }
+
+        throw new IllegalStateException(
+                "status "
+                        + current
+                        + " is not allowed for this transition"
         );
     }
 
