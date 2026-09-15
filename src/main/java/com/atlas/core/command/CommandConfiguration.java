@@ -1,5 +1,6 @@
 package com.atlas.core.command;
 
+import com.atlas.adapter.AdapterExecutionSink;
 import com.atlas.adapter.AdapterRegistry;
 import com.atlas.command.CommandRegistry;
 import com.atlas.device.DeviceRegistry;
@@ -53,4 +54,14 @@ public class CommandConfiguration {
                 commandRegistry
         );
     }
+
+    @Bean
+    public AdapterExecutionSink adapterExecutionSink(
+            CommandExecutionService commandExecutionService
+    ) {
+        return new CoreAdapterExecutionSink(
+                commandExecutionService
+        );
+    }
+
 }
