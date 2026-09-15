@@ -30,7 +30,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.OffsetDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -240,24 +239,30 @@ public class PostgresCommandRegistry
             CommandStatusEntry first,
             CommandStatusEntry second
     ) {
-
         return first.status() == second.status()
-                && first.at()
-                .toInstant()
-                .truncatedTo(
-                        ChronoUnit.MICROS
-                )
-                .equals(
+                && sameDatabaseTimestamp(
+                        first.at(),
                         second.at()
-                                .toInstant()
-                                .truncatedTo(
-                                        ChronoUnit.MICROS
-                                )
                 )
                 && Objects.equals(
                         first.detail(),
                         second.detail()
                 );
+    }
+
+    private boolean sameDatabaseTimestamp(
+            OffsetDateTime first,
+            OffsetDateTime second
+    ) {
+        Duration difference =
+                Duration.between(
+                        first.toInstant(),
+                        second.toInstant()
+                ).abs();
+
+        return difference.compareTo(
+                Duration.ofNanos(1_000)
+        ) < 0;
     }
 
     private void insertStatusHistoryEntry(
