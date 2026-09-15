@@ -210,6 +210,116 @@ class CommandExecutionServiceTest {
         );
     }
 
+    @Test
+    void shouldTimeoutAcknowledgedCommand() {
+
+        OffsetDateTime now =
+                OffsetDateTime.now();
+
+        Command command =
+                acknowledgedCommand(
+                        "cmd_00000000000000000000000003",
+                        now
+                );
+
+        InMemoryCommandRegistry registry =
+                registered(command);
+
+        CommandExecutionService service =
+                new CommandExecutionService(registry);
+
+        OffsetDateTime timedOutAt =
+                now.plus(Duration.ofSeconds(5));
+
+        service.timeout(
+                command.id(),
+                "command execution timed out",
+                timedOutAt
+        );
+
+        assertEquals(
+                CommandStatus.TIMEOUT,
+                command.status()
+        );
+
+        assertEquals(
+                timedOutAt,
+                command.completedAt()
+        );
+
+        assertNotNull(command.result());
+
+        assertEquals(
+                CommandOutcome.UNKNOWN,
+                command.result().outcome()
+        );
+
+        assertEquals(
+                CommandStatus.TIMEOUT,
+                registry.findById(command.id())
+                        .orElseThrow()
+                        .status()
+        );
+    }
+
+    @Test
+    void shouldMarkAcknowledgedCommandAsUnknownOutcome() {
+
+        OffsetDateTime now =
+                OffsetDateTime.now();
+
+        Command command =
+                acknowledgedCommand(
+                        "cmd_00000000000000000000000004",
+                        now
+                );
+
+        InMemoryCommandRegistry registry =
+                registered(command);
+
+        CommandExecutionService service =
+                new CommandExecutionService(registry);
+
+        OffsetDateTime unknownAt =
+                now.plus(Duration.ofMillis(40));
+
+        service.markUnknownOutcome(
+                command.id(),
+                "execution outcome is unknown",
+                "adapter_message_unknown",
+                unknownAt
+        );
+
+        assertEquals(
+                CommandStatus.UNKNOWN_OUTCOME,
+                command.status()
+        );
+
+        assertEquals(
+                unknownAt,
+                command.completedAt()
+        );
+
+        assertNotNull(command.result());
+
+        assertEquals(
+                CommandOutcome.UNKNOWN,
+                command.result().outcome()
+        );
+
+        assertEquals(
+                "adapter_message_unknown",
+                command.result().adapterMessageId()
+        );
+
+        assertEquals(
+                CommandStatus.UNKNOWN_OUTCOME,
+                registry.findById(command.id())
+                        .orElseThrow()
+                        .status()
+        );
+    }
+
     private InMemoryCommandRegistry registered(
             Command command
     ) {

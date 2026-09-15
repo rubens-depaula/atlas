@@ -88,6 +88,52 @@ public final class CommandExecutionService {
         commandRegistry.save(command);
     }
 
+    public void timeout(
+            CommandId commandId,
+            String message,
+            OffsetDateTime timedOutAt
+    ) {
+        Command command =
+                requireCommand(commandId);
+
+        if (timedOutAt == null) {
+            throw new IllegalArgumentException(
+                    "timedOutAt cannot be null"
+            );
+        }
+
+        command.timeout(
+                message,
+                timedOutAt
+        );
+
+        commandRegistry.save(command);
+    }
+
+    public void markUnknownOutcome(
+            CommandId commandId,
+            String message,
+            String adapterMessageId,
+            OffsetDateTime at
+    ) {
+        Command command =
+                requireCommand(commandId);
+
+        if (at == null) {
+            throw new IllegalArgumentException(
+                    "at cannot be null"
+            );
+        }
+
+        command.markUnknownOutcome(
+                message,
+                adapterMessageId,
+                at
+        );
+
+        commandRegistry.save(command);
+    }
+
     private Command requireCommand(
             CommandId commandId
     ) {
