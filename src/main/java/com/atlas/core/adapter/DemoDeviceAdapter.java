@@ -66,6 +66,10 @@ public final class DemoDeviceAdapter
             );
         }
 
+       if ("simulate_timeout".equals(command.action())) {
+           return;
+       }
+
         OffsetDateTime startedAt =
                 OffsetDateTime.now();
 

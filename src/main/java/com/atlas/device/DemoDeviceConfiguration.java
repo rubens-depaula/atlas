@@ -139,6 +139,20 @@ public class DemoDeviceConfiguration {
                             null
                     );
 
+           ActionDescriptor simulateTimeout =
+                   new ActionDescriptor(
+                           new ActionKey("simulate_timeout"),
+                           "Simular timeout",
+                           List.of(),
+                           Criticality.COSMETIC,
+                           false,
+                           null,
+                           null,
+                           null,
+                           List.of(),
+                           null
+                   );
+
             Device device = new Device(
                     deviceId,
                     "Spot da bancada 01",
@@ -160,7 +174,8 @@ public class DemoDeviceConfiguration {
                     List.of(
                             turnOn,
                             turnOff,
-                            changeBrightness
+                            changeBrightness,
+                            simulateTimeout
                     ),
                     List.of(),
                     null,
