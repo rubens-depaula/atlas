@@ -1,6 +1,8 @@
 package com.atlas.core.command;
 
+import com.atlas.adapter.AdapterRegistry;
 import com.atlas.command.CommandRegistry;
+import com.atlas.device.DeviceRegistry;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -27,6 +29,28 @@ public class CommandConfiguration {
         return new PostgresCommandRegistry(
                 jdbcTemplate,
                 jsonMapper
+        );
+    }
+
+    @Bean
+    public CommandDispatcher commandDispatcher(
+            DeviceRegistry deviceRegistry,
+            CommandRegistry commandRegistry,
+            AdapterRegistry adapterRegistry
+    ) {
+        return new CommandDispatcher(
+                deviceRegistry,
+                commandRegistry,
+                adapterRegistry
+        );
+    }
+
+    @Bean
+    public CommandExecutionService commandExecutionService(
+            CommandRegistry commandRegistry
+    ) {
+        return new CommandExecutionService(
+                commandRegistry
         );
     }
 }
