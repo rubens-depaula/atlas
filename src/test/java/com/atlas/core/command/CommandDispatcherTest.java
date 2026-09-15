@@ -10,6 +10,7 @@ import com.atlas.command.Command;
 import com.atlas.command.CommandActor;
 import com.atlas.command.CommandActorType;
 import com.atlas.command.CommandCausality;
+import com.atlas.command.CommandErrorCode;
 import com.atlas.command.CommandId;
 import com.atlas.command.CommandIdempotencyKey;
 import com.atlas.command.CommandOrigin;
@@ -252,6 +253,161 @@ class CommandDispatcherTest {
 
         assertNotNull(
                 command.result()
+        );
+    }
+
+
+    @Test
+    void shouldFailWhenDeviceIsUnavailable() {
+
+        OffsetDateTime now =
+                OffsetDateTime.now();
+
+        Device device =
+                device(now);
+
+        InMemoryDeviceRegistry deviceRegistry =
+                new InMemoryDeviceRegistry();
+
+        InMemoryCommandRegistry commandRegistry =
+                new InMemoryCommandRegistry();
+
+        Command command =
+                new ActionCommandService().submit(
+                        new CommandId(
+                                "cmd_00000000000000000000000001"
+                        ),
+                        device,
+                        new ActionKey("turn_on"),
+                        Map.of(),
+                        new CommandActor(
+                                CommandActorType.USER,
+                                "user_test"
+                        ),
+                        new CommandOrigin(
+                                CommandOriginType.API,
+                                "api_test"
+                        ),
+                        new CommandIdempotencyKey(
+                                "idem_device_unavailable",
+                                Duration.ofSeconds(10)
+                        ),
+                        new CommandCausality(
+                                "trace_device_unavailable",
+                                null,
+                                0
+                        ),
+                        Duration.ofSeconds(5),
+                        now
+                );
+
+        commandRegistry.register(command);
+
+        AdapterRegistry adapterRegistry =
+                instanceId -> Optional.empty();
+
+        CommandDispatcher dispatcher =
+                new CommandDispatcher(
+                        deviceRegistry,
+                        commandRegistry,
+                        adapterRegistry
+                );
+
+        dispatcher.dispatch(
+                command,
+                now.plus(Duration.ofMillis(10))
+        );
+
+        assertEquals(
+                CommandStatus.FAILED,
+                command.status()
+        );
+
+        assertNotNull(
+                command.result()
+        );
+
+        assertEquals(
+                CommandErrorCode.DEVICE_UNREACHABLE,
+                command.result().errorCode()
+        );
+    }
+
+    @Test
+    void shouldFailWhenAdapterIsUnavailable() {
+
+        OffsetDateTime now =
+                OffsetDateTime.now();
+
+        Device device =
+                device(now);
+
+        InMemoryDeviceRegistry deviceRegistry =
+                new InMemoryDeviceRegistry();
+
+        deviceRegistry.register(device);
+
+        InMemoryCommandRegistry commandRegistry =
+                new InMemoryCommandRegistry();
+
+        Command command =
+                new ActionCommandService().submit(
+                        new CommandId(
+                                "cmd_00000000000000000000000002"
+                        ),
+                        device,
+                        new ActionKey("turn_on"),
+                        Map.of(),
+                        new CommandActor(
+                                CommandActorType.USER,
+                                "user_test"
+                        ),
+                        new CommandOrigin(
+                                CommandOriginType.API,
+                                "api_test"
+                        ),
+                        new CommandIdempotencyKey(
+                                "idem_adapter_unavailable",
+                                Duration.ofSeconds(10)
+                        ),
+                        new CommandCausality(
+                                "trace_adapter_unavailable",
+                                null,
+                                0
+                        ),
+                        Duration.ofSeconds(5),
+                        now
+                );
+
+        commandRegistry.register(command);
+
+        AdapterRegistry adapterRegistry =
+                instanceId -> Optional.empty();
+
+        CommandDispatcher dispatcher =
+                new CommandDispatcher(
+                        deviceRegistry,
+                        commandRegistry,
+                        adapterRegistry
+                );
+
+        dispatcher.dispatch(
+                command,
+                now.plus(Duration.ofMillis(10))
+        );
+
+        assertEquals(
+                CommandStatus.FAILED,
+                command.status()
+        );
+
+        assertNotNull(
+                command.result()
+        );
+
+        assertEquals(
+                CommandErrorCode.ADAPTER_UNAVAILABLE,
+                command.result().errorCode()
         );
     }
 
