@@ -57,6 +57,17 @@ public class CommandConfiguration {
         );
     }
 
+   @Bean
+   public CommandTimeoutWatchdog commandTimeoutWatchdog(
+           CommandRegistry commandRegistry,
+           CommandExecutionService commandExecutionService
+   ) {
+       return new CommandTimeoutWatchdog(
+               commandRegistry,
+               commandExecutionService
+       );
+   }
+
     @Bean
     public AdapterExecutionSink adapterExecutionSink(
             CommandExecutionService commandExecutionService
