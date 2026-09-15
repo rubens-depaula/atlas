@@ -12,6 +12,7 @@ import com.atlas.command.CommandOriginType;
 import com.atlas.command.CommandResult;
 import com.atlas.command.CommandStatus;
 import com.atlas.core.command.ActionCommandService;
+import com.atlas.core.command.CommandDispatcher;
 import com.atlas.core.command.CommandIdGenerator;
 import com.atlas.device.Device;
 import com.atlas.device.DeviceId;
@@ -38,17 +39,20 @@ public class DeviceActionController {
     private final ActionCommandService commandService;
     private final CommandIdGenerator commandIdGenerator;
     private final CommandRegistry commandRegistry;
+    private final CommandDispatcher commandDispatcher;
 
     public DeviceActionController(
             DeviceRegistry deviceRegistry,
             ActionCommandService commandService,
             CommandIdGenerator commandIdGenerator,
-            CommandRegistry commandRegistry
+            CommandRegistry commandRegistry,
+            CommandDispatcher commandDispatcher
     ) {
         this.deviceRegistry = deviceRegistry;
         this.commandService = commandService;
         this.commandIdGenerator = commandIdGenerator;
         this.commandRegistry = commandRegistry;
+        this.commandDispatcher = commandDispatcher;
     }
 
     @PostMapping("/{deviceId}/actions/{action}")
@@ -126,12 +130,21 @@ public class DeviceActionController {
 
         commandRegistry.register(command);
 
+        boolean accepted =
+                command.status()
+                        == CommandStatus.ACCEPTED;
+
+        if (accepted) {
+            commandDispatcher.dispatch(
+                    command,
+                    OffsetDateTime.now()
+            );
+        }
+
         CommandResponse response =
                 CommandResponse.from(command);
 
-        if (command.status()
-                == CommandStatus.ACCEPTED) {
-
+        if (accepted) {
             return ResponseEntity
                     .status(HttpStatus.ACCEPTED)
                     .body(response);
