@@ -9,6 +9,7 @@ import com.atlas.command.CommandId;
 import com.atlas.command.CommandIdempotencyKey;
 import com.atlas.command.CommandOrigin;
 import com.atlas.command.CommandOriginType;
+import com.atlas.command.CommandOutcome;
 import com.atlas.command.CommandStatus;
 import com.atlas.command.CommandTarget;
 import com.atlas.device.Criticality;
@@ -20,6 +21,7 @@ import java.time.OffsetDateTime;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 class CommandExecutionServiceTest {
 
@@ -30,62 +32,16 @@ class CommandExecutionServiceTest {
                 OffsetDateTime.now();
 
         Command command =
-                new Command(
-                        new CommandId(
-                                "cmd_00000000000000000000000000"
-                        ),
-                        new CommandActor(
-                                CommandActorType.USER,
-                                "user_test"
-                        ),
-                        new CommandOrigin(
-                                CommandOriginType.API,
-                                "api_test"
-                        ),
-                        new CommandTarget(
-                                new DeviceId(
-                                        "dev_demo_spot_01"
-                                ),
-                                new ActionKey(
-                                        "turn_on"
-                                )
-                        ),
-                        Map.of(),
-                        Criticality.COSMETIC,
-                        now,
-                        Duration.ofSeconds(5),
-                        new CommandIdempotencyKey(
-                                "idem_test",
-                                Duration.ofSeconds(10)
-                        ),
-                        new CommandCausality(
-                                "trace_test",
-                                null,
-                                0
-                        )
+                acknowledgedCommand(
+                        "cmd_00000000000000000000000000",
+                        now
                 );
 
-        command.accept(
-                now.plus(Duration.ofMillis(10))
-        );
-
-        command.markSent(
-                now.plus(Duration.ofMillis(20))
-        );
-
-        command.acknowledge(
-                now.plus(Duration.ofMillis(30))
-        );
-
-        InMemoryCommandRegistry commandRegistry =
-                new InMemoryCommandRegistry();
-
-        commandRegistry.register(command);
+        InMemoryCommandRegistry registry =
+                registered(command);
 
         CommandExecutionService service =
-                new CommandExecutionService(
-                        commandRegistry
-                );
+                new CommandExecutionService(registry);
 
         OffsetDateTime startedAt =
                 now.plus(Duration.ofMillis(40));
@@ -114,14 +70,207 @@ class CommandExecutionServiceTest {
                 command.expectedCompletionAt()
         );
 
-        Command persisted =
-                commandRegistry
-                        .findById(command.id())
-                        .orElseThrow();
-
         assertEquals(
                 CommandStatus.EXECUTING,
-                persisted.status()
+                registry.findById(command.id())
+                        .orElseThrow()
+                        .status()
         );
+    }
+
+    @Test
+    void shouldCompleteExecutingCommand() {
+
+        OffsetDateTime now =
+                OffsetDateTime.now();
+
+        Command command =
+                acknowledgedCommand(
+                        "cmd_00000000000000000000000001",
+                        now
+                );
+
+        InMemoryCommandRegistry registry =
+                registered(command);
+
+        CommandExecutionService service =
+                new CommandExecutionService(registry);
+
+        OffsetDateTime startedAt =
+                now.plus(Duration.ofMillis(40));
+
+        service.startExecution(
+                command.id(),
+                startedAt,
+                startedAt.plus(Duration.ofSeconds(2))
+        );
+
+        OffsetDateTime completedAt =
+                now.plus(Duration.ofMillis(50));
+
+        service.complete(
+                command.id(),
+                "adapter_message_complete",
+                completedAt
+        );
+
+        assertEquals(
+                CommandStatus.COMPLETED,
+                command.status()
+        );
+
+        assertEquals(
+                completedAt,
+                command.completedAt()
+        );
+
+        assertNotNull(command.result());
+
+        assertEquals(
+                CommandOutcome.SUCCESS,
+                command.result().outcome()
+        );
+
+        assertEquals(
+                "adapter_message_complete",
+                command.result().adapterMessageId()
+        );
+
+        assertEquals(
+                CommandStatus.COMPLETED,
+                registry.findById(command.id())
+                        .orElseThrow()
+                        .status()
+        );
+    }
+
+    @Test
+    void shouldConfirmExecutingCommand() {
+
+        OffsetDateTime now =
+                OffsetDateTime.now();
+
+        Command command =
+                acknowledgedCommand(
+                        "cmd_00000000000000000000000002",
+                        now
+                );
+
+        InMemoryCommandRegistry registry =
+                registered(command);
+
+        CommandExecutionService service =
+                new CommandExecutionService(registry);
+
+        OffsetDateTime startedAt =
+                now.plus(Duration.ofMillis(40));
+
+        service.startExecution(
+                command.id(),
+                startedAt,
+                startedAt.plus(Duration.ofSeconds(2))
+        );
+
+        OffsetDateTime confirmedAt =
+                now.plus(Duration.ofMillis(50));
+
+        service.confirm(
+                command.id(),
+                "adapter_message_confirm",
+                confirmedAt
+        );
+
+        assertEquals(
+                CommandStatus.CONFIRMED,
+                command.status()
+        );
+
+        assertEquals(
+                confirmedAt,
+                command.completedAt()
+        );
+
+        assertNotNull(command.result());
+
+        assertEquals(
+                CommandOutcome.SUCCESS,
+                command.result().outcome()
+        );
+
+        assertEquals(
+                "adapter_message_confirm",
+                command.result().adapterMessageId()
+        );
+
+        assertEquals(
+                CommandStatus.CONFIRMED,
+                registry.findById(command.id())
+                        .orElseThrow()
+                        .status()
+        );
+    }
+
+    private InMemoryCommandRegistry registered(
+            Command command
+    ) {
+        InMemoryCommandRegistry registry =
+                new InMemoryCommandRegistry();
+
+        registry.register(command);
+
+        return registry;
+    }
+
+    private Command acknowledgedCommand(
+            String id,
+            OffsetDateTime now
+    ) {
+        Command command =
+                new Command(
+                        new CommandId(id),
+                        new CommandActor(
+                                CommandActorType.USER,
+                                "user_test"
+                        ),
+                        new CommandOrigin(
+                                CommandOriginType.API,
+                                "api_test"
+                        ),
+                        new CommandTarget(
+                                new DeviceId(
+                                        "dev_demo_spot_01"
+                                ),
+                                new ActionKey(
+                                        "turn_on"
+                                )
+                        ),
+                        Map.of(),
+                        Criticality.COSMETIC,
+                        now,
+                        Duration.ofSeconds(5),
+                        new CommandIdempotencyKey(
+                                "idem_" + id,
+                                Duration.ofSeconds(10)
+                        ),
+                        new CommandCausality(
+                                "trace_" + id,
+                                null,
+                                0
+                        )
+                );
+
+        command.accept(
+                now.plus(Duration.ofMillis(10))
+        );
+
+        command.markSent(
+                now.plus(Duration.ofMillis(20))
+        );
+
+        command.acknowledge(
+                now.plus(Duration.ofMillis(30))
+        );
+
+        return command;
     }
 }

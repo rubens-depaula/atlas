@@ -27,11 +27,8 @@ public final class CommandExecutionService {
             OffsetDateTime startedAt,
             OffsetDateTime expectedCompletionAt
     ) {
-        if (commandId == null) {
-            throw new IllegalArgumentException(
-                    "commandId cannot be null"
-            );
-        }
+        Command command =
+                requireCommand(commandId);
 
         if (startedAt == null) {
             throw new IllegalArgumentException(
@@ -39,21 +36,74 @@ public final class CommandExecutionService {
             );
         }
 
-        Command command =
-                commandRegistry
-                        .findById(commandId)
-                        .orElseThrow(
-                                () -> new IllegalStateException(
-                                        "command not found: "
-                                                + commandId.value()
-                                )
-                        );
-
         command.startExecution(
                 startedAt,
                 expectedCompletionAt
         );
 
         commandRegistry.save(command);
+    }
+
+    public void complete(
+            CommandId commandId,
+            String adapterMessageId,
+            OffsetDateTime completedAt
+    ) {
+        Command command =
+                requireCommand(commandId);
+
+        if (completedAt == null) {
+            throw new IllegalArgumentException(
+                    "completedAt cannot be null"
+            );
+        }
+
+        command.complete(
+                adapterMessageId,
+                completedAt
+        );
+
+        commandRegistry.save(command);
+    }
+
+    public void confirm(
+            CommandId commandId,
+            String adapterMessageId,
+            OffsetDateTime confirmedAt
+    ) {
+        Command command =
+                requireCommand(commandId);
+
+        if (confirmedAt == null) {
+            throw new IllegalArgumentException(
+                    "confirmedAt cannot be null"
+            );
+        }
+
+        command.confirm(
+                adapterMessageId,
+                confirmedAt
+        );
+
+        commandRegistry.save(command);
+    }
+
+    private Command requireCommand(
+            CommandId commandId
+    ) {
+        if (commandId == null) {
+            throw new IllegalArgumentException(
+                    "commandId cannot be null"
+            );
+        }
+
+        return commandRegistry
+                .findById(commandId)
+                .orElseThrow(
+                        () -> new IllegalStateException(
+                                "command not found: "
+                                        + commandId.value()
+                        )
+                );
     }
 }
