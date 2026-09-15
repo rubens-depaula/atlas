@@ -6,6 +6,8 @@ import com.atlas.adapter.AdapterExecutionSink;
 import com.atlas.adapter.DeviceAdapter;
 
 import java.time.OffsetDateTime;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public final class DemoDeviceAdapter
         implements DeviceAdapter {
@@ -14,9 +16,11 @@ public final class DemoDeviceAdapter
             "demo.adapter";
 
     private final AdapterExecutionSink executionSink;
+    private final ScheduledExecutorService executor;
 
     public DemoDeviceAdapter(
-            AdapterExecutionSink executionSink
+            AdapterExecutionSink executionSink,
+            ScheduledExecutorService executor
     ) {
         if (executionSink == null) {
             throw new IllegalArgumentException(
@@ -24,7 +28,14 @@ public final class DemoDeviceAdapter
             );
         }
 
+        if (executor == null) {
+            throw new IllegalArgumentException(
+                    "executor cannot be null"
+            );
+        }
+
         this.executionSink = executionSink;
+        this.executor = executor;
     }
 
     @Override
@@ -66,26 +77,53 @@ public final class DemoDeviceAdapter
             );
         }
 
-       if ("simulate_timeout".equals(command.action())) {
-           return;
-       }
+        if ("simulate_timeout".equals(
+                command.action()
+        )) {
+            return;
+        }
 
+        executor.schedule(
+                () -> startExecution(
+                        command,
+                        receipt
+                ),
+                500,
+                TimeUnit.MILLISECONDS
+        );
+    }
+
+    private void startExecution(
+            AdapterCommand command,
+            AdapterDispatchReceipt receipt
+    ) {
         OffsetDateTime startedAt =
                 OffsetDateTime.now();
 
         executionSink.executionStarted(
                 command.commandId(),
                 startedAt,
-                startedAt.plusSeconds(1)
+                startedAt.plusSeconds(2)
         );
 
-        OffsetDateTime completedAt =
-                OffsetDateTime.now();
+        executor.schedule(
+                () -> completeExecution(
+                        command,
+                        receipt
+                ),
+                1,
+                TimeUnit.SECONDS
+        );
+    }
 
+    private void completeExecution(
+            AdapterCommand command,
+            AdapterDispatchReceipt receipt
+    ) {
         executionSink.executionCompleted(
                 command.commandId(),
                 receipt.adapterMessageId(),
-                completedAt
+                OffsetDateTime.now()
         );
     }
 }
