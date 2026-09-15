@@ -142,5 +142,10 @@ public final class CommandDispatcher {
         );
 
         commandRegistry.save(command);
+
+        adapter.afterAcknowledged(
+                adapterCommand,
+                receipt
+        );
     }
 }

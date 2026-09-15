@@ -7,4 +7,11 @@ public interface DeviceAdapter {
     AdapterDispatchReceipt dispatch(
             AdapterCommand command
     );
+
+    default void afterAcknowledged(
+            AdapterCommand command,
+            AdapterDispatchReceipt receipt
+    ) {
+        // Optional lifecycle hook.
+    }
 }
