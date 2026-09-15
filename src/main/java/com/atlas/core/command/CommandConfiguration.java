@@ -37,12 +37,14 @@ public class CommandConfiguration {
     public CommandDispatcher commandDispatcher(
             DeviceRegistry deviceRegistry,
             CommandRegistry commandRegistry,
-            AdapterRegistry adapterRegistry
+            AdapterRegistry adapterRegistry,
+            CommandExecutionService commandExecutionService
     ) {
         return new CommandDispatcher(
                 deviceRegistry,
                 commandRegistry,
-                adapterRegistry
+                adapterRegistry,
+                commandExecutionService
         );
     }
 
@@ -63,5 +65,4 @@ public class CommandConfiguration {
                 commandExecutionService
         );
     }
-
 }

@@ -18,11 +18,13 @@ public final class CommandDispatcher {
     private final DeviceRegistry deviceRegistry;
     private final CommandRegistry commandRegistry;
     private final AdapterRegistry adapterRegistry;
+    private final CommandExecutionService commandExecutionService;
 
     public CommandDispatcher(
             DeviceRegistry deviceRegistry,
             CommandRegistry commandRegistry,
-            AdapterRegistry adapterRegistry
+            AdapterRegistry adapterRegistry,
+            CommandExecutionService commandExecutionService
     ) {
         if (deviceRegistry == null) {
             throw new IllegalArgumentException(
@@ -42,9 +44,17 @@ public final class CommandDispatcher {
             );
         }
 
+        if (commandExecutionService == null) {
+            throw new IllegalArgumentException(
+                    "commandExecutionService cannot be null"
+            );
+        }
+
         this.deviceRegistry = deviceRegistry;
         this.commandRegistry = commandRegistry;
         this.adapterRegistry = adapterRegistry;
+        this.commandExecutionService =
+                commandExecutionService;
     }
 
     public void dispatch(
@@ -143,9 +153,21 @@ public final class CommandDispatcher {
 
         commandRegistry.save(command);
 
-        adapter.afterAcknowledged(
-                adapterCommand,
-                receipt
-        );
+        try {
+            adapter.afterAcknowledged(
+                    adapterCommand,
+                    receipt
+            );
+
+        } catch (RuntimeException exception) {
+
+            commandExecutionService.markUnknownOutcome(
+                    command.id(),
+                    "adapter execution failed after acknowledgement: "
+                            + exception.getMessage(),
+                    receipt.adapterMessageId(),
+                    OffsetDateTime.now()
+            );
+        }
     }
 }

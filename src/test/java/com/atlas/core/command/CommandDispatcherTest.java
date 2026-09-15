@@ -107,7 +107,10 @@ class CommandDispatcherTest {
                 new CommandDispatcher(
                         deviceRegistry,
                         commandRegistry,
-                        adapterRegistry
+                        adapterRegistry,
+                        new CommandExecutionService(
+                                commandRegistry
+                        )
                 );
 
         dispatcher.dispatch(
@@ -235,7 +238,10 @@ class CommandDispatcherTest {
                 new CommandDispatcher(
                         deviceRegistry,
                         commandRegistry,
-                        adapterRegistry
+                        adapterRegistry,
+                        new CommandExecutionService(
+                                commandRegistry
+                        )
                 );
 
         OffsetDateTime sentAt =
@@ -310,7 +316,10 @@ class CommandDispatcherTest {
                 new CommandDispatcher(
                         deviceRegistry,
                         commandRegistry,
-                        adapterRegistry
+                        adapterRegistry,
+                        new CommandExecutionService(
+                                commandRegistry
+                        )
                 );
 
         dispatcher.dispatch(
@@ -388,7 +397,10 @@ class CommandDispatcherTest {
                 new CommandDispatcher(
                         deviceRegistry,
                         commandRegistry,
-                        adapterRegistry
+                        adapterRegistry,
+                        new CommandExecutionService(
+                                commandRegistry
+                        )
                 );
 
         dispatcher.dispatch(
@@ -411,7 +423,286 @@ class CommandDispatcherTest {
         );
     }
 
-    private Device device(
+    @Test
+   void shouldMarkUnknownOutcomeWhenAdapterFailsAfterAcknowledgement() {
+
+       OffsetDateTime now =
+               OffsetDateTime.now()
+                       .minusSeconds(1);
+
+       Device device =
+               device(now);
+
+       InMemoryDeviceRegistry deviceRegistry =
+               new InMemoryDeviceRegistry();
+
+       deviceRegistry.register(device);
+
+       InMemoryCommandRegistry commandRegistry =
+               new InMemoryCommandRegistry();
+
+       Command command =
+               new ActionCommandService().submit(
+                       new CommandId(
+                               "cmd_00000000000000000000000003"
+                       ),
+                       device,
+                       new ActionKey("turn_on"),
+                       Map.of(),
+                       new CommandActor(
+                               CommandActorType.USER,
+                               "user_test"
+                       ),
+                       new CommandOrigin(
+                               CommandOriginType.API,
+                               "api_test"
+                       ),
+                       new CommandIdempotencyKey(
+                               "idem_post_ack_failure",
+                               Duration.ofSeconds(10)
+                       ),
+                       new CommandCausality(
+                               "trace_post_ack_failure",
+                               null,
+                               0
+                       ),
+                       Duration.ofSeconds(5),
+                       now
+               );
+
+       commandRegistry.register(command);
+
+       OffsetDateTime acknowledgedAt =
+               now.plus(Duration.ofMillis(20));
+
+       DeviceAdapter failingAfterAcknowledgement =
+               new DeviceAdapter() {
+
+                   @Override
+                   public String instanceId() {
+                       return "demo.adapter";
+                   }
+
+                   @Override
+                   public AdapterDispatchReceipt dispatch(
+                           AdapterCommand adapterCommand
+                   ) {
+                       return new AdapterDispatchReceipt(
+                               "adapter_message_post_ack_failure",
+                               acknowledgedAt
+                       );
+                   }
+
+                   @Override
+                   public void afterAcknowledged(
+                           AdapterCommand adapterCommand,
+                           AdapterDispatchReceipt receipt
+                   ) {
+                       throw new IllegalStateException(
+                               "simulated post-ack failure"
+                       );
+                   }
+               };
+
+       AdapterRegistry adapterRegistry =
+               instanceId ->
+                       "demo.adapter".equals(instanceId)
+                               ? Optional.of(
+                                       failingAfterAcknowledgement
+                               )
+                               : Optional.empty();
+
+       CommandExecutionService executionService =
+               new CommandExecutionService(
+                       commandRegistry
+               );
+
+       CommandDispatcher dispatcher =
+               new CommandDispatcher(
+                       deviceRegistry,
+                       commandRegistry,
+                       adapterRegistry,
+                       executionService
+               );
+
+       dispatcher.dispatch(
+               command,
+               now.plus(Duration.ofMillis(10))
+       );
+
+       Command persisted =
+               commandRegistry
+                       .findById(command.id())
+                       .orElseThrow();
+
+       assertEquals(
+               CommandStatus.UNKNOWN_OUTCOME,
+               persisted.status()
+       );
+
+       assertNotNull(
+               persisted.result()
+       );
+
+       assertEquals(
+               "adapter_message_post_ack_failure",
+               persisted.result().adapterMessageId()
+       );
+   }
+
+   @Test
+   void shouldPreserveTerminalCommandWhenAdapterFailsAfterCompletion() {
+
+       OffsetDateTime now =
+               OffsetDateTime.now();
+
+       Device device =
+               device(now);
+
+       InMemoryDeviceRegistry deviceRegistry =
+               new InMemoryDeviceRegistry();
+
+       deviceRegistry.register(device);
+
+       InMemoryCommandRegistry commandRegistry =
+               new InMemoryCommandRegistry();
+
+       Command command =
+               new ActionCommandService().submit(
+                       new CommandId(
+                               "cmd_00000000000000000000000004"
+                       ),
+                       device,
+                       new ActionKey("turn_on"),
+                       Map.of(),
+                       new CommandActor(
+                               CommandActorType.USER,
+                               "user_test"
+                       ),
+                       new CommandOrigin(
+                               CommandOriginType.API,
+                               "api_test"
+                       ),
+                       new CommandIdempotencyKey(
+                               "idem_completed_then_failure",
+                               Duration.ofSeconds(10)
+                       ),
+                       new CommandCausality(
+                               "trace_completed_then_failure",
+                               null,
+                               0
+                       ),
+                       Duration.ofSeconds(5),
+                       now
+               );
+
+       commandRegistry.register(command);
+
+       CommandExecutionService executionService =
+               new CommandExecutionService(
+                       commandRegistry
+               );
+
+       OffsetDateTime acknowledgedAt =
+               now.plus(Duration.ofMillis(20));
+
+       DeviceAdapter completesThenFails =
+               new DeviceAdapter() {
+
+                   @Override
+                   public String instanceId() {
+                       return "demo.adapter";
+                   }
+
+                   @Override
+                   public AdapterDispatchReceipt dispatch(
+                           AdapterCommand adapterCommand
+                   ) {
+                       return new AdapterDispatchReceipt(
+                               "adapter_message_completed",
+                               acknowledgedAt
+                       );
+                   }
+
+                   @Override
+                   public void afterAcknowledged(
+                           AdapterCommand adapterCommand,
+                           AdapterDispatchReceipt receipt
+                   ) {
+                       CommandId commandId =
+                               new CommandId(
+                                       adapterCommand.commandId()
+                               );
+
+                       OffsetDateTime startedAt =
+                               now.plus(
+                                       Duration.ofMillis(30)
+                               );
+
+                       executionService.startExecution(
+                               commandId,
+                               startedAt,
+                               startedAt.plus(
+                                       Duration.ofSeconds(1)
+                               )
+                       );
+
+                       executionService.complete(
+                               commandId,
+                               receipt.adapterMessageId(),
+                               now.plus(
+                                       Duration.ofMillis(40)
+                               )
+                       );
+
+                       throw new IllegalStateException(
+                               "simulated failure after completion"
+                       );
+                   }
+               };
+
+       AdapterRegistry adapterRegistry =
+               instanceId ->
+                       "demo.adapter".equals(instanceId)
+                               ? Optional.of(
+                                       completesThenFails
+                               )
+                               : Optional.empty();
+
+       CommandDispatcher dispatcher =
+               new CommandDispatcher(
+                       deviceRegistry,
+                       commandRegistry,
+                       adapterRegistry,
+                       executionService
+               );
+
+       dispatcher.dispatch(
+               command,
+               now.plus(Duration.ofMillis(10))
+       );
+
+       Command persisted =
+               commandRegistry
+                       .findById(command.id())
+                       .orElseThrow();
+
+       assertEquals(
+               CommandStatus.COMPLETED,
+               persisted.status()
+       );
+
+       assertNotNull(
+               persisted.result()
+       );
+
+       assertEquals(
+               "adapter_message_completed",
+               persisted.result().adapterMessageId()
+       );
+   }
+
+   private Device device(
             OffsetDateTime now
     ) {
 

@@ -125,6 +125,10 @@ public final class CommandExecutionService {
             );
         }
 
+        if (command.status().isTerminal()) {
+            return;
+        }
+
         command.markUnknownOutcome(
                 message,
                 adapterMessageId,
