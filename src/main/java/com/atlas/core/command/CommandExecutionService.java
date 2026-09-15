@@ -102,6 +102,10 @@ public final class CommandExecutionService {
             );
         }
 
+        if (command.status().isTerminal()) {
+            return;
+        }
+
         command.timeout(
                 message,
                 timedOutAt
