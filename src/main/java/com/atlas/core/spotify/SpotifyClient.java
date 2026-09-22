@@ -131,6 +131,8 @@ public final class SpotifyClient {
                     false,
                     null,
                     null,
+                    null,
+                    null,
                     0,
                     0,
                     null,
@@ -165,6 +167,22 @@ public final class SpotifyClient {
                             );
 
             String artist = null;
+
+            JsonNode albumNode =
+                    item.path("album");
+
+            String album =
+                    albumNode.isMissingNode()
+                            || albumNode.isNull()
+                            ? null
+                            : nullableText(
+                                    albumNode.path("name")
+                            );
+
+            String artworkUrl =
+                    selectArtworkUrl(
+                            albumNode.path("images")
+                    );
 
             JsonNode artists =
                     item.path("artists");
@@ -208,6 +226,8 @@ public final class SpotifyClient {
                     ).asBoolean(false),
                     track,
                     artist,
+                    album,
+                    artworkUrl,
                     root.path(
                             "progress_ms"
                     ).asLong(0),
@@ -565,6 +585,50 @@ public final class SpotifyClient {
         );
     }
 
+    private String selectArtworkUrl(
+            JsonNode images
+    ) {
+        if (images == null
+                || !images.isArray()
+                || images.isEmpty()) {
+            return null;
+        }
+
+        String bestUrl = null;
+        int bestWidth = Integer.MAX_VALUE;
+
+        for (JsonNode image : images) {
+            String url =
+                    nullableText(
+                            image.path("url")
+                    );
+
+            if (url == null) {
+                continue;
+            }
+
+            int width =
+                    image.path("width")
+                            .asInt(0);
+
+            if (
+                    width >= 96
+                    && width < bestWidth
+            ) {
+                bestWidth = width;
+                bestUrl = url;
+            }
+        }
+
+        if (bestUrl != null) {
+            return bestUrl;
+        }
+
+        return nullableText(
+                images.get(0).path("url")
+        );
+    }
+
     private String nullableText(
             JsonNode node
     ) {
@@ -588,10 +652,17 @@ public final class SpotifyClient {
             boolean playing,
             String track,
             String artist,
+            String album,
+            String artworkUrl,
             long progressMs,
             long durationMs,
             String device,
             Integer volumePercent
     ) {
+
+        public boolean artworkAvailable() {
+            return artworkUrl != null
+                    && !artworkUrl.isBlank();
+        }
     }
 }
