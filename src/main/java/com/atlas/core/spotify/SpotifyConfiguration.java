@@ -63,4 +63,13 @@ public class SpotifyConfiguration {
                 jsonMapper
         );
     }
+
+    @Bean
+    public SpotifyArtworkService spotifyArtworkService(
+            SpotifyClient spotifyClient
+    ) {
+        return new SpotifyArtworkService(
+                spotifyClient
+        );
+    }
 }

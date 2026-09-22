@@ -1,6 +1,8 @@
 package com.atlas.core.spotify;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,11 +19,14 @@ import java.util.Map;
 public class SpotifyController {
 
     private final SpotifyClient spotify;
+    private final SpotifyArtworkService artwork;
 
     public SpotifyController(
-            SpotifyClient spotify
+            SpotifyClient spotify,
+            SpotifyArtworkService artwork
     ) {
         this.spotify = spotify;
+        this.artwork = artwork;
     }
 
     @GetMapping("/status")
@@ -66,6 +71,47 @@ public class SpotifyController {
     @GetMapping("/player")
     public SpotifyClient.PlayerSnapshot player() {
         return spotify.player();
+    }
+
+    @GetMapping("/artwork/current")
+    public ResponseEntity<byte[]> currentArtwork() {
+        return artwork
+                .currentArtworkRgb565()
+                .map(bytes ->
+                        ResponseEntity
+                                .ok()
+                                .contentType(
+                                        MediaType
+                                                .APPLICATION_OCTET_STREAM
+                                )
+                                .header(
+                                        HttpHeaders.CACHE_CONTROL,
+                                        "no-store"
+                                )
+                                .header(
+                                        "X-ATLAS-Image-Format",
+                                        "RGB565-BE"
+                                )
+                                .header(
+                                        "X-ATLAS-Image-Width",
+                                        String.valueOf(
+                                                SpotifyArtworkService.WIDTH
+                                        )
+                                )
+                                .header(
+                                        "X-ATLAS-Image-Height",
+                                        String.valueOf(
+                                                SpotifyArtworkService.HEIGHT
+                                        )
+                                )
+                                .body(bytes)
+                )
+                .orElseGet(
+                        () ->
+                                ResponseEntity
+                                        .noContent()
+                                        .build()
+                );
     }
 
     @PostMapping("/play-pause")
